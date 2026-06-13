@@ -1,0 +1,9 @@
+// ============================================================
+// STEP 1: Add these to pubspec.yaml dependencies
+// ============================================================
+//
+//   firebase_messaging: ^15.1.6
+//   flutter_callkit_incoming: ^2.0.0
+//   flutter_local_notifications: ^18.0.1
+//
+// Then run: flutter pub get

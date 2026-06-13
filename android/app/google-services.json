@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "451886767035",
+    "project_id": "eluelu-88a6c",
+    "storage_bucket": "eluelu-88a6c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:451886767035:android:6edae05cf6b2864289829e",
+        "android_client_info": {
+          "package_name": "com.connecto.app.jaimakali"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmcNS30Jo9XDRPDu-hzTuEnd3NJSeo_ik"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:451886767035:android:9d419ce47d83bb3789829e",
+        "android_client_info": {
+          "package_name": "com.sajnire.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmcNS30Jo9XDRPDu-hzTuEnd3NJSeo_ik"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

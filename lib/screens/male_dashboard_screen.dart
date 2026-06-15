@@ -479,8 +479,6 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
           for (var doc in snapshot.data!.docs) {
             try {
               final data = doc.data() as Map<String, dynamic>;
-              
-              // Fallback to doc.id if nickname field is missing or empty
               String nickname = data['nickname']?.toString() ?? '';
               if (nickname.trim().isEmpty) {
                 nickname = doc.id;
@@ -489,12 +487,13 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
               liveExperts.add(
                 FemaleExpert(
                   nickname: nickname,
-                  age: (data['age'] as num?)?.toInt() ?? 20,
-                  city: data['city']?.toString() ?? 'Online',
-                  pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
-                  bio: data['bio']?.toString() ?? '',
-                  avatarPath: data['avatarPath']?.toString() ?? 'assets/avatars/female_1.png',
-                  languages: data['languages']?.toString() ?? 'Hindi',
+                  age: data['age'] ?? 20,
+                  city: data['city'] ?? 'Online',
+                  pricePerMin: data['pricePerMin'] ?? 5,
+                  bio: data['bio'] ?? '',
+                  avatarPath:
+                      data['avatarPath'] ?? 'assets/avatars/female_1.png',
+                  languages: data['languages'] ?? 'Hindi',
                   rating: (() {
                     final totalSecs = (data['totalTalkSeconds'] as num?)?.toDouble() ?? 0;
                     // 0s → 3.5, 36000s (10hrs) → 5.0, always clamped to [3.5, 5.0]
@@ -502,14 +501,12 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                     final stored = (data['rating'] as num?)?.toDouble();
                     return double.parse((stored ?? computed.clamp(3.5, 5.0)).toStringAsFixed(1));
                   })(),
-                  isOnline: data['isOnline'] == true,
-                  categories: data['categories'] is List 
-                      ? List<String>.from(data['categories']) 
-                      : ['All'],
+                  isOnline: data['isOnline'] ?? false,
+                  categories: List<String>.from(data['categories'] ?? ['All']),
                 ),
               );
             } catch (e) {
-              debugPrint('Error parsing expert doc ${doc.id}: $e');
+              debugPrint('Error parsing expert doc: $e');
             }
           }
         }

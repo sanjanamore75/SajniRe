@@ -325,13 +325,14 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
   }
 
   Future<void> _saveCallLog() async {
-    if (_duration <= 0) return; // Optional: Ignore 0 sec calls
     try {
+      final status = _duration > 0 ? 'ended' : 'missed';
       await FirebaseFirestore.instance.collection('call_logs').add({
         'callerId': widget.callerId,
-        'expertId': widget.receiverId,
+        'receiverId': widget.receiverId,
         'durationSeconds': _duration,
-        'endedAt': FieldValue.serverTimestamp(),
+        'status': status,
+        'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       debugPrint('Error saving call log: $e');

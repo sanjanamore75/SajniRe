@@ -7,8 +7,8 @@ import '../models/female_expert.dart';
 import 'phone_auth_screen.dart';
 import 'active_call_page.dart';
 import 'wallet_recharge_screen.dart';
+import 'matchmaking_screen.dart';
 import '../services/call_service.dart';
-import '../services/matching_service.dart';
 import '../services/notification_service.dart';
 
 class MaleCallerDashboard extends StatefulWidget {
@@ -20,7 +20,6 @@ class MaleCallerDashboard extends StatefulWidget {
 
 class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   final CallService _callService = CallService();
-  late final MatchingService _matchingService;
 
   // Navigation & filter states
   int _currentTab = 0; // 0 for Home, 1 for Recents
@@ -46,7 +45,6 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   @override
   void initState() {
     super.initState();
-    _matchingService = MatchingService(_callService);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _fetchInitialWalletBalance();
     });
@@ -62,6 +60,15 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
         final hasUsedFreeCall = docSnap.data()?['hasUsedFreeCall'] as bool? ?? false;
         appState.setWalletBalance(balance);
         appState.setHasUsedFreeCall(hasUsedFreeCall);
+        
+        final nickname = docSnap.data()?['nickname'] as String? ?? '';
+        final avatarPath = docSnap.data()?['avatarPath'] as String? ?? '';
+        if (nickname.isNotEmpty) {
+          appState.setNickname(nickname);
+        }
+        if (avatarPath.isNotEmpty) {
+          appState.setSelectedAvatar(avatarPath);
+        }
       } else {
         await FirebaseFirestore.instance.collection('users').doc(mobile).set({
           'mobileNumber': mobile,
@@ -136,86 +143,15 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
       return;
     }
 
-    // Show a loading dialog while checking status
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => const AlertDialog(
-        content: Row(
-          children: [
-            CircularProgressIndicator(color: brandPrimary),
-            SizedBox(width: 20),
-            Expanded(
-              child: Text(
-                'Checking availability...',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MatchmakingScreen(
+          requestedExpert: expert,
+          isRandomMode: false,
         ),
       ),
     );
-
-    try {
-      final expertId = expert.nickname.toLowerCase();
-      final docSnap = await FirebaseFirestore.instance
-          .collection('experts_queue')
-          .doc(expertId)
-          .get();
-
-      // Close the loading dialog
-      if (mounted) {
-        Navigator.pop(context);
-      }
-
-      bool isBusy = true;
-      if (docSnap.exists) {
-        final data = docSnap.data();
-        if (data != null && data['status'] == 'waiting') {
-          isBusy = false;
-        }
-      }
-
-      if (!isBusy) {
-        // Female is online and NOT busy, call her directly!
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => ActiveCallPage(
-                receiverId: expertId,
-                callerId: context.read<AppState>().nickname.isNotEmpty
-                    ? context.read<AppState>().nickname.toLowerCase()
-                    : 'caller_1',
-                nickname: expert.nickname,
-                avatarPath: expert.avatarPath,
-                pricePerMin: expert.pricePerMin.toDouble(),
-                isCaller: true,
-                isFirstFreeCall: !hasUsedFreeCall,
-              ),
-            ),
-          );
-        }
-      } else {
-        // Female is busy or offline, show alert and trigger matchmaking algorithm!
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${expert.nickname} is busy. Connecting you to another available expert...'),
-              duration: const Duration(seconds: 3),
-            ),
-          );
-          _startRandomMatchmaking();
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Close loading if still open
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error checking status: $e')),
-        );
-      }
-    }
   }
 
   void _startRandomMatchmaking() {
@@ -256,100 +192,13 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
       return;
     }
 
-    final String callerId = context.read<AppState>().nickname.isNotEmpty
-        ? context.read<AppState>().nickname.toLowerCase()
-        : 'caller_1';
-
-    MatchController? matchController;
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) {
-        matchController = _matchingService.findRandomExpertAndCall(
-          callerId: callerId,
-          onMatchFound: (expertId, callRoomId) {
-            Navigator.pop(dialogCtx);
-
-            FirebaseFirestore.instance
-                .collection('experts')
-                .doc(expertId)
-                .get()
-                .then((doc) {
-                  String nickname = expertId.toUpperCase();
-                  String avatarPath = 'assets/avatars/female_1.png';
-                  if (doc.exists) {
-                    final data = doc.data();
-                    if (data != null) {
-                      nickname = data['nickname'] ?? nickname;
-                      avatarPath = data['avatarPath'] ?? avatarPath;
-                    }
-                  }
-
-                  if (mounted) {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => ActiveCallPage(
-                          callRoomId: callRoomId,
-                          receiverId: expertId,
-                          callerId: callerId,
-                          nickname: nickname,
-                          avatarPath: avatarPath,
-                          pricePerMin: pricePerMin,
-                          isCaller: true,
-                          preStartedCallService: _callService,
-                          isFirstFreeCall: !hasUsedFreeCall,
-                        ),
-                      ),
-                    );
-                  }
-                });
-          },
-          onRemoteStream: (stream) {},
-          onCallEnded: () {},
-          onError: (err) {
-            Navigator.pop(dialogCtx);
-            ScaffoldMessenger.of(
-              context,
-            ).showSnackBar(SnackBar(content: Text('Matchmaking error: $err')));
-          },
-        );
-
-        return AlertDialog(
-          title: const Text(
-            'Finding Match...',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          content: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: brandPrimary),
-              SizedBox(height: 20),
-              Text(
-                'Waiting for an expert to connect...',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: brandTextGrey),
-              ),
-            ],
-          ),
-          actionsAlignment: MainAxisAlignment.center,
-          actions: [
-            TextButton(
-              onPressed: () {
-                matchController?.cancel();
-                Navigator.pop(dialogCtx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Matchmaking cancelled')),
-                );
-              },
-              style: TextButton.styleFrom(foregroundColor: brandAccent),
-              child: const Text('Cancel Search'),
-            ),
-          ],
-        );
-      },
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MatchmakingScreen(
+          isRandomMode: true,
+        ),
+      ),
     );
   }
 
@@ -479,6 +328,11 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
           for (var doc in snapshot.data!.docs) {
             try {
               final data = doc.data() as Map<String, dynamic>;
+              bool isOnline = data['isOnline'] ?? false;
+              
+              // Hide offline experts from DB
+              if (!isOnline) continue;
+
               String nickname = data['nickname']?.toString() ?? '';
               if (nickname.trim().isEmpty) {
                 nickname = doc.id;
@@ -501,7 +355,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                     final stored = (data['rating'] as num?)?.toDouble();
                     return double.parse((stored ?? computed.clamp(3.5, 5.0)).toStringAsFixed(1));
                   })(),
-                  isOnline: data['isOnline'] ?? false,
+                  isOnline: isOnline,
                   categories: List<String>.from(data['categories'] ?? ['All']),
                 ),
               );
@@ -511,7 +365,20 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
           }
         }
 
-        final expertsList = liveExperts.where((expert) {
+        // Generate Dummy Experts for UI Display
+        List<FemaleExpert> dummyExperts = [
+          FemaleExpert(nickname: 'Sneha', age: 22, city: 'Mumbai', pricePerMin: 5, bio: 'Love chatting about life', avatarPath: 'assets/avatars/female_1.png', languages: 'Hindi, English', rating: 4.8, isOnline: true, categories: ['All', 'Relationship']),
+          FemaleExpert(nickname: 'Priya', age: 24, city: 'Delhi', pricePerMin: 5, bio: 'Friendly advisor here for you', avatarPath: 'assets/avatars/female_2.png', languages: 'Hindi', rating: 4.9, isOnline: true, categories: ['All', 'Marriage']),
+          FemaleExpert(nickname: 'Riya', age: 21, city: 'Pune', pricePerMin: 5, bio: 'Let\'s be good friends!', avatarPath: 'assets/avatars/female_3.png', languages: 'Hindi', rating: 4.7, isOnline: true, categories: ['All', 'Star']),
+          FemaleExpert(nickname: 'Kavya', age: 25, city: 'Bangalore', pricePerMin: 5, bio: 'Relationship expert and listener', avatarPath: 'assets/avatars/female_4.png', languages: 'Hindi, English', rating: 4.9, isOnline: true, categories: ['All', 'Confidence']),
+          FemaleExpert(nickname: 'Ananya', age: 23, city: 'Kolkata', pricePerMin: 5, bio: 'Always here to listen to you', avatarPath: 'assets/avatars/female_5.png', languages: 'Hindi, Bengali', rating: 4.6, isOnline: true, categories: ['All', 'Relationship']),
+          FemaleExpert(nickname: 'Meera', age: 26, city: 'Jaipur', pricePerMin: 5, bio: 'Life coach and confident speaker', avatarPath: 'assets/avatars/female_6.png', languages: 'Hindi', rating: 4.8, isOnline: true, categories: ['All', 'Marriage']),
+        ];
+
+        // Combine DB online experts with dummy experts
+        final allAvailableExperts = [...liveExperts, ...dummyExperts];
+
+        final expertsList = allAvailableExperts.where((expert) {
           if (expert.nickname.trim().isEmpty) return false;
           if (_selectedCategory == 'All') return true;
           return expert.categories.contains(_selectedCategory);
@@ -901,7 +768,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('call_logs')
-                  .where('callerId', isEqualTo: appState.nickname.isNotEmpty ? appState.nickname.toLowerCase() : 'caller_1')
+                  .where('callerId', isEqualTo: appState.mobileNumber)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -917,8 +784,8 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                 // Sort in memory by endedAt descending
                 final sortedDocs = List<QueryDocumentSnapshot>.from(docs);
                 sortedDocs.sort((a, b) {
-                  final aTime = (a.data() as Map<String, dynamic>)['endedAt'] as Timestamp?;
-                  final bTime = (b.data() as Map<String, dynamic>)['endedAt'] as Timestamp?;
+                  final aTime = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
+                  final bTime = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
                   if (aTime == null && bTime == null) return 0;
                   if (aTime == null) return 1;
                   if (bTime == null) return -1;
@@ -931,7 +798,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                     final data = sortedDocs[index].data() as Map<String, dynamic>;
                     final expertId = data['expertId'] ?? 'Unknown';
                     final durationSeconds = data['durationSeconds'] ?? 0;
-                    final endedAt = data['endedAt'] as Timestamp?;
+                    final endedAt = data['createdAt'] as Timestamp?;
                     
                     final m = durationSeconds ~/ 60;
                     final s = durationSeconds % 60;
@@ -951,60 +818,91 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                       formattedTime = 'Just now';
                     }
 
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 16),
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: brandCardBg,
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.03),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        children: [
-                          // Avatar
-                          Container(
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.blue.shade200,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: CircleAvatar(
-                              radius: 28,
-                              backgroundColor: Colors.grey.shade100,
-                              backgroundImage: const AssetImage('assets/avatars/female_1.png'),
-                            ),
-                          ),
-                          const SizedBox(width: 16),
+                    return FutureBuilder<DocumentSnapshot>(
+                      future: FirebaseFirestore.instance.collection('experts').doc(expertId).get(),
+                      builder: (context, expertSnap) {
+                        String avatarPath = 'assets/avatars/female_1.png';
+                        String displayName = expertId;
+                        
+                        if (expertSnap.hasData && expertSnap.data!.exists) {
+                          final expertData = expertSnap.data!.data() as Map<String, dynamic>?;
+                          if (expertData != null) {
+                            avatarPath = expertData['avatarPath'] ?? avatarPath;
+                            displayName = expertData['nickname'] ?? displayName;
+                          }
+                        }
 
-                          // Details
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        expertId,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color: brandTextDark,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
+                        // Also check if it's one of the dummy experts to give it the right avatar
+                        final List<Map<String, String>> dummyAvatars = [
+                          {'name': 'sneha', 'path': 'assets/avatars/female_1.png'},
+                          {'name': 'priya', 'path': 'assets/avatars/female_2.png'},
+                          {'name': 'riya', 'path': 'assets/avatars/female_3.png'},
+                          {'name': 'kavya', 'path': 'assets/avatars/female_4.png'},
+                          {'name': 'ananya', 'path': 'assets/avatars/female_5.png'},
+                          {'name': 'meera', 'path': 'assets/avatars/female_6.png'},
+                        ];
+                        
+                        for (var dummy in dummyAvatars) {
+                          if (expertId.toLowerCase() == dummy['name']) {
+                            avatarPath = dummy['path']!;
+                            displayName = dummy['name']![0].toUpperCase() + dummy['name']!.substring(1);
+                          }
+                        }
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: brandCardBg,
+                            borderRadius: BorderRadius.circular(24),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.03),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              // Avatar
+                              Container(
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.blue.shade200,
+                                    width: 1.5,
+                                  ),
                                 ),
+                                child: CircleAvatar(
+                                  radius: 28,
+                                  backgroundColor: Colors.grey.shade100,
+                                  backgroundImage: AssetImage(avatarPath),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+
+                              // Details
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            displayName,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
+                                              color: brandTextDark,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                 const SizedBox(height: 4),
                                 Text(
                                   '$durationStr • $formattedTime',
@@ -1040,6 +938,8 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                           ),
                         ],
                       ),
+                    );
+                      },
                     );
                   },
                 );

@@ -4,12 +4,21 @@ import 'package:provider/provider.dart';
 import '../theme/app_colors.dart';
 import '../providers/app_state.dart';
 
-class RecentSessionsScreen extends StatelessWidget {
+class RecentSessionsScreen extends StatefulWidget {
   const RecentSessionsScreen({super.key});
 
   @override
+  State<RecentSessionsScreen> createState() => _RecentSessionsScreenState();
+}
+
+class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
+  String _filter = 'All'; // 'All' or 'Missed'
+
+  @override
   Widget build(BuildContext context) {
-    final currentUserMobile = context.watch<AppState>().mobileNumber;
+    final appState = context.watch<AppState>();
+    final currentUserMobile = appState.mobileNumber;
+    final currentNickname = appState.nickname.toLowerCase();
     
     return Scaffold(
       backgroundColor: AppColors.bgLight,
@@ -36,9 +45,19 @@ class RecentSessionsScreen extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               child: Row(
                 children: [
-                  _buildFilterChip('All', isActive: true),
+                  _buildFilterChip(
+                    'All', 
+                    isActive: _filter == 'All',
+                    onTap: () => setState(() => _filter = 'All'),
+                  ),
                   const SizedBox(width: 10),
-                  _buildFilterChip('Missed', icon: Icons.phone_missed, iconColor: Colors.red),
+                  _buildFilterChip(
+                    'Missed', 
+                    isActive: _filter == 'Missed',
+                    icon: Icons.phone_missed, 
+                    iconColor: _filter == 'Missed' ? Colors.white : Colors.red,
+                    onTap: () => setState(() => _filter = 'Missed'),
+                  ),
                 ],
               ),
             ),
@@ -65,12 +84,11 @@ class RecentSessionsScreen extends StatelessWidget {
               ),
             ),
 
-            // List View connected to Firestore
+            // List View connected to Firestore 'call_logs' collection
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: FirebaseFirestore.instance
-                    .collection('calls')
-                    .where('status', isEqualTo: 'ended')
+                    .collection('call_logs')
                     .snapshots(),
                 builder: (context, snapshot) {
                   if (snapshot.connectionState == ConnectionState.waiting) {
@@ -85,10 +103,19 @@ class RecentSessionsScreen extends StatelessWidget {
                     return _buildEmptyState();
                   }
 
-                  // Filter calls relevant to current user
+                  // Filter calls relevant to current user and the selected filter
                   final userCalls = snapshot.data!.docs.where((doc) {
                      final data = doc.data() as Map<String, dynamic>;
-                     return data['callerId'] == currentUserMobile || data['receiverId'] == currentUserMobile;
+                     final matchesUser = data['callerId'] == currentUserMobile || 
+                                         data['receiverId'] == currentUserMobile ||
+                                         data['receiverId'] == currentNickname ||
+                                         data['callerId'] == currentNickname;
+                     if (!matchesUser) return false;
+
+                     if (_filter == 'Missed') {
+                       return data['status'] == 'missed';
+                     }
+                     return true; // 'All'
                   }).toList();
 
                   userCalls.sort((a, b) {
@@ -115,6 +142,7 @@ class RecentSessionsScreen extends StatelessWidget {
                       
                       final isCaller = data['callerId'] == currentUserMobile;
                       final otherUserId = isCaller ? data['receiverId'] : data['callerId'];
+                      final isMissed = data['status'] == 'missed';
                       
                       String timeText = 'Unknown Time';
                       if (data['createdAt'] != null) {
@@ -122,12 +150,60 @@ class RecentSessionsScreen extends StatelessWidget {
                          timeText = '${dt.day}/${dt.month} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
                       }
 
-                      return _buildCallCard(
-                        name: otherUserId ?? 'Unknown',
-                        timeText: timeText,
-                        duration: 'Ended',
-                        cost: '₹0', 
-                        avatarUrl: 'https://i.pravatar.cc/150?u=$otherUserId',
+                      // Determine duration text
+                      String durationText = isMissed ? 'Missed Call' : 'Ended';
+                      if (!isMissed && data['durationSeconds'] != null) {
+                        final sec = data['durationSeconds'] as int;
+                        final m = sec ~/ 60;
+                        final s = sec % 60;
+                        durationText = '${m}m ${s}s';
+                      }
+
+                      final collectionName = isCaller ? 'experts' : 'users';
+                      
+                      return FutureBuilder<DocumentSnapshot>(
+                        future: FirebaseFirestore.instance.collection(collectionName).doc(otherUserId).get(),
+                        builder: (context, profileSnapshot) {
+                          String avatarPath = isCaller ? 'assets/avatars/female_1.png' : 'assets/avatars/male_1.png';
+                          String displayName = otherUserId ?? 'Unknown';
+
+                          if (profileSnapshot.hasData && profileSnapshot.data!.exists) {
+                            final profileData = profileSnapshot.data!.data() as Map<String, dynamic>;
+                            if (profileData['avatarPath'] != null && profileData['avatarPath'].toString().isNotEmpty) {
+                              avatarPath = profileData['avatarPath'];
+                            }
+                            if (profileData['nickname'] != null && profileData['nickname'].toString().isNotEmpty) {
+                              displayName = profileData['nickname'];
+                            }
+                          }
+
+                          // Also check if it's one of the dummy experts to give it the right avatar
+                          if (isCaller) {
+                            final List<Map<String, String>> dummyAvatars = [
+                              {'name': 'sneha', 'path': 'assets/avatars/female_1.png'},
+                              {'name': 'priya', 'path': 'assets/avatars/female_2.png'},
+                              {'name': 'riya', 'path': 'assets/avatars/female_3.png'},
+                              {'name': 'kavya', 'path': 'assets/avatars/female_4.png'},
+                              {'name': 'ananya', 'path': 'assets/avatars/female_5.png'},
+                              {'name': 'meera', 'path': 'assets/avatars/female_6.png'},
+                            ];
+                            for (var dummy in dummyAvatars) {
+                              if (displayName.toLowerCase() == dummy['name']) {
+                                avatarPath = dummy['path']!;
+                                displayName = dummy['name']![0].toUpperCase() + dummy['name']!.substring(1);
+                              }
+                            }
+                          }
+
+                          return _buildCallCard(
+                            name: displayName,
+                            timeText: timeText,
+                            duration: durationText,
+                            cost: isMissed ? '₹0' : 'Ended',
+                            avatarUrl: avatarPath,
+                            isMissed: isMissed,
+                          );
+                        },
                       );
                     },
                   );
@@ -156,32 +232,35 @@ class RecentSessionsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildFilterChip(String label, {bool isActive = false, IconData? icon, Color? iconColor}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: isActive ? AppColors.primaryBlue : Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isActive ? AppColors.primaryBlue : Colors.grey.shade300,
-        ),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 16, color: iconColor),
-            const SizedBox(width: 4),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              color: isActive ? Colors.white : AppColors.textGrey,
-              fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-              fontSize: 14,
-            ),
+  Widget _buildFilterChip(String label, {bool isActive = false, IconData? icon, Color? iconColor, VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: isActive ? AppColors.primaryBlue : Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive ? AppColors.primaryBlue : Colors.grey.shade300,
           ),
-        ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (icon != null) ...[
+              Icon(icon, size: 16, color: iconColor),
+              const SizedBox(width: 4),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                color: isActive ? Colors.white : AppColors.textGrey,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                fontSize: 14,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -192,6 +271,7 @@ class RecentSessionsScreen extends StatelessWidget {
     required String duration,
     required String cost,
     required String avatarUrl,
+    required bool isMissed,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -214,10 +294,12 @@ class RecentSessionsScreen extends StatelessWidget {
           // Avatar with gradient border
           Container(
             padding: const EdgeInsets.all(3),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: LinearGradient(
-                colors: [AppColors.gradientBlueStart, AppColors.gradientBlueEnd],
+                colors: isMissed 
+                  ? [Colors.red.shade300, Colors.red.shade700] 
+                  : [AppColors.gradientBlueStart, AppColors.gradientBlueEnd],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -227,7 +309,9 @@ class RecentSessionsScreen extends StatelessWidget {
               backgroundColor: Colors.white,
               child: CircleAvatar(
                 radius: 28,
-                backgroundImage: NetworkImage(avatarUrl),
+                backgroundImage: avatarUrl.startsWith('http')
+                    ? NetworkImage(avatarUrl) as ImageProvider
+                    : AssetImage(avatarUrl),
               ),
             ),
           ),
@@ -240,10 +324,10 @@ class RecentSessionsScreen extends StatelessWidget {
               children: [
                 Text(
                   name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.textDark,
+                    color: isMissed ? Colors.red.shade700 : AppColors.textDark,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -264,14 +348,18 @@ class RecentSessionsScreen extends StatelessWidget {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.access_time, size: 14, color: AppColors.primaryBlue),
+                    Icon(
+                      isMissed ? Icons.phone_missed : Icons.access_time, 
+                      size: 14, 
+                      color: isMissed ? Colors.red : AppColors.primaryBlue
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       duration,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
-                        color: AppColors.primaryBlue,
+                        color: isMissed ? Colors.red : AppColors.primaryBlue,
                       ),
                     ),
                   ],
@@ -296,15 +384,17 @@ class RecentSessionsScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.successGreen.withOpacity(0.1),
+                  color: isMissed 
+                    ? Colors.red.withOpacity(0.1) 
+                    : AppColors.successGreen.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   cost,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.successGreen,
+                    color: isMissed ? Colors.red : AppColors.successGreen,
                   ),
                 ),
               ),

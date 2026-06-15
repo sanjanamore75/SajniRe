@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import 'female_onboarding/female_onboarding_parent.dart';
+import 'male_onboarding/male_onboarding_parent.dart';
 import 'male_dashboard_screen.dart';
 
 class GenderSelectionScreen extends StatefulWidget {
@@ -28,11 +29,10 @@ class _GenderSelectionScreenState extends State<GenderSelectionScreen> {
     appState.setSelectedGender(_selectedGender);
 
     if (_selectedGender == 'Male') {
-      // Navigate to Male Caller Dashboard (Step 4, Interface B)
-      Navigator.pushAndRemoveUntil(
+      // Navigate to Male Caller Onboarding Flow
+      Navigator.push(
         context,
-        MaterialPageRoute(builder: (context) => const MaleCallerDashboard()),
-        (route) => false, // Clear history so they cannot go back to login
+        MaterialPageRoute(builder: (context) => const MaleOnboardingParent()),
       );
     } else {
       // Navigate to Female Onboarding Flow (Step 3)

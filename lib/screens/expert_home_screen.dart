@@ -11,6 +11,7 @@ import 'active_call_page.dart';
 import 'phone_auth_screen.dart';
 import 'upgrade_program_screen.dart';
 import 'withdraw_screen.dart';
+import 'incoming_call_screen.dart';
 import '../services/notification_service.dart';
 
 class ExpertHomeScreen extends StatefulWidget {
@@ -165,67 +166,19 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   }
 
   void _showIncomingCallDialog(String roomId, String callerId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => AlertDialog(
-        backgroundColor: AppColors.cardWhite,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(
-                color: AppColors.lightBlueBg, shape: BoxShape.circle),
-            child: const Icon(Icons.call_received,
-                color: AppColors.primaryBlue, size: 22),
-          ),
-          const SizedBox(width: 12),
-          const Text('Incoming Call',
-              style: TextStyle(
-                  color: AppColors.textDark, fontWeight: FontWeight.bold)),
-        ]),
-        content: Text('User "$callerId" is calling you.',
-            style: const TextStyle(color: AppColors.textGrey)),
-        actions: [
-          OutlinedButton(
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              _callService.endCall(roomId);
-            },
-            style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.red,
-                side: const BorderSide(color: Colors.red)),
-            child: const Text('Decline'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(dialogCtx);
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ActiveCallPage(
-                    callRoomId: roomId,
-                    receiverId: context.read<AppState>().nickname.toLowerCase(),
-                    callerId: callerId,
-                    nickname: callerId,
-                    avatarPath: '',
-                    pricePerMin: 5.0,
-                    isCaller: false,
-                  ),
-                ),
-              );
-              if (mounted) {
-                _fetchExpertStats();
-              }
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.successGreen,
-                foregroundColor: Colors.white),
-            child: const Text('Accept'),
-          ),
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => IncomingCallScreen(
+          callRoomId: roomId,
+          callerId: callerId,
+        ),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        _fetchExpertStats();
+      }
+    });
   }
 
   /// Check KYC status in Firestore, then route accordingly

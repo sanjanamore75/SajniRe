@@ -36,15 +36,11 @@ class _NicknamePageState extends State<NicknamePage> {
 
   @override
   Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverFillRemaining(
-          hasScrollBody: false,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
+    return Form(
+      key: _formKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
           // Title
           const Text(
             'What is your',
@@ -95,10 +91,7 @@ class _NicknamePageState extends State<NicknamePage> {
             child: const Text('Next'),
           ),
         ],
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

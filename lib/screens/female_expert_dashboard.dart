@@ -6,6 +6,7 @@ import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import 'phone_auth_screen.dart';
 import 'active_call_page.dart';
+import 'incoming_call_screen.dart';
 import '../services/call_service.dart';
 import '../services/matching_service.dart';
 
@@ -117,45 +118,20 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
   }
 
   void _showIncomingCallDialog(String roomId, String callerId) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => AlertDialog(
-        title: const Text('Incoming Call'),
-        content: Text('User "$callerId" is calling you.'),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              _callService.endCall(roomId);
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Decline'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(dialogCtx);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ActiveCallPage(
-                    callRoomId: roomId,
-                    receiverId: context.read<AppState>().nickname.toLowerCase(),
-                    callerId: callerId,
-                    nickname: callerId,
-                    avatarPath: '',
-                    pricePerMin: 5.0,
-                    isCaller: false,
-                  ),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-            child: const Text('Accept'),
-          ),
-        ],
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => IncomingCallScreen(
+          callRoomId: roomId,
+          callerId: callerId,
+        ),
       ),
-    );
+    ).then((_) {
+      if (mounted) {
+        final appState = context.read<AppState>();
+        _loadEarningsFromFirestore(appState);
+      }
+    });
   }
 
 

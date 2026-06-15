@@ -28,8 +28,7 @@
         tools:replace="android:label"
         android:label="SajniRe"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher"
-        android:showOnLockScreen="true">
+        android:icon="@mipmap/ic_launcher">
 
         <!-- Allow activity to show over lock screen when call is accepted -->
         <activity

@@ -47,7 +47,7 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
         _secondsRecorded++;
       });
       // Stop recording automatically after 6 seconds for demo
-      if (_secondsRecorded >= 6) {
+      if (_secondsRecorded >= 15) {
         _stopRecording();
       }
     });
@@ -77,9 +77,13 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    return CustomScrollView(
+      slivers: [
+        SliverFillRemaining(
+          hasScrollBody: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
         // Title
         const Text(
           'Audio',
@@ -132,7 +136,7 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
               ),
               SizedBox(height: 16),
               Text(
-                '“नमस्ते! दोस्ती बहुत ख़ास होती है। कनेक्टो पर दोस्ती करना बिल्कुल सुरक्षित है। मैं यहाँ नए दोस्त बनाने के लिए तैयार हूँ!”',
+                '“हेलो! मुझे नए लोगों से मिलना और उनके साथ मजेदार बातें करना बहुत पसंद है। जिंदगी में हँसना और मुस्कुराना सबसे ज़रूरी है। तो आइए, कुछ अच्छी बातें करते हैं!”',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
@@ -152,7 +156,7 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
             children: [
               if (_isRecording) ...[
                 Text(
-                  'Recording... 0:0$_secondsRecorded',
+                  'Recording... 0:${_secondsRecorded.toString().padLeft(2, '0')}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -266,6 +270,9 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
             ],
             const SizedBox(height: 20),
           ],
+        ),
+            ],
+          ),
         ),
       ],
     );

@@ -16,8 +16,16 @@ class _PrimaryLanguagePageState extends State<PrimaryLanguagePage> {
 
   final List<Map<String, String>> _languages = [
     {'name': 'Hindi', 'native': 'हिन्दी', 'symbol': 'अ'},
+    {'name': 'English', 'native': 'English', 'symbol': 'A'},
     {'name': 'Telugu', 'native': 'తెలుగు', 'symbol': 'అ'},
     {'name': 'Bangla', 'native': 'বাংলা', 'symbol': 'অ'},
+    {'name': 'Tamil', 'native': 'தமிழ்', 'symbol': 'அ'},
+    {'name': 'Marathi', 'native': 'मराठी', 'symbol': 'अ'},
+    {'name': 'Gujarati', 'native': 'ગુજરાતી', 'symbol': 'અ'},
+    {'name': 'Kannada', 'native': 'ಕನ್ನಡ', 'symbol': 'ಅ'},
+    {'name': 'Malayalam', 'native': 'മലയാളം', 'symbol': 'അ'},
+    {'name': 'Punjabi', 'native': 'ਪੰਜਾਬੀ', 'symbol': 'ਅ'},
+    {'name': 'Odia', 'native': 'ଓଡ଼ିଆ', 'symbol': 'ଓ'},
   ];
 
   @override

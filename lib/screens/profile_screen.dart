@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_colors.dart';
 import '../providers/app_state.dart';
+import 'kyc_pan_screen.dart';
+import 'referral_screen.dart';
+import 'withdrawal_history_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -14,8 +18,8 @@ class ProfileScreen extends StatelessWidget {
         builder: (context, appState, child) {
           final nickname = appState.nickname.isNotEmpty ? appState.nickname : 'User';
           final avatar = appState.selectedAvatar.isNotEmpty 
-              ? NetworkImage(appState.selectedAvatar) 
-              : const NetworkImage('https://i.pravatar.cc/150?img=5'); // Fallback dummy
+              ? AssetImage(appState.selectedAvatar) 
+              : const AssetImage('assets/avatars/female_1.png'); // Fallback dummy
               
           return SingleChildScrollView(
             child: Column(
@@ -26,7 +30,7 @@ class ProfileScreen extends StatelessWidget {
                   children: [
                     // Top Blue Background
                     Container(
-                      height: 280,
+                      height: 220,
                       width: double.infinity,
                       decoration: const BoxDecoration(
                         color: AppColors.primaryBlue,
@@ -34,7 +38,7 @@ class ProfileScreen extends StatelessWidget {
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const SizedBox(height: 40),
+                          const SizedBox(height: 20),
                           // Avatar with Edit Button
                           Stack(
                             clipBehavior: Clip.none,
@@ -100,92 +104,61 @@ class ProfileScreen extends StatelessWidget {
                               color: Colors.white,
                             ),
                           ),
-                          const SizedBox(height: 40), // Space for overlapping grid
                         ],
-                      ),
-                    ),
-
-                    // Overlapping Dashboard Grid
-                    Positioned(
-                      top: 240, // Adjust this value to overlap correctly
-                      left: 20,
-                      right: 20,
-                      child: Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: AppColors.cardWhite,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              spreadRadius: 1,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildDashboardCard(
-                                    title: '₹${appState.walletBalance.toStringAsFixed(0)}', // Live Balance
-                                    subtitle: 'Earnings',
-                                    icon: Icons.account_balance_wallet,
-                                    iconColor: AppColors.primaryBlue,
-                                    iconBgColor: AppColors.primaryBlue.withOpacity(0.1),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: _buildDashboardCard(
-                                    title: 'Refer & Earn',
-                                    icon: Icons.people,
-                                    iconColor: Colors.deepPurpleAccent,
-                                    iconBgColor: Colors.deepPurpleAccent.withOpacity(0.1),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _buildDashboardCard(
-                                    title: 'Transactions',
-                                    icon: Icons.shopping_cart,
-                                    iconColor: Colors.teal,
-                                    iconBgColor: Colors.teal.withOpacity(0.1),
-                                  ),
-                                ),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: _buildDashboardCard(
-                                    title: 'Privacy',
-                                    icon: Icons.security,
-                                    iconColor: AppColors.gradientLightBlueStart,
-                                    iconBgColor: AppColors.gradientLightBlueStart.withOpacity(0.1),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
                       ),
                     ),
                   ],
                 ),
 
-                // Spacing to push content below the overlapping grid
-                const SizedBox(height: 200), // Adjust this value based on grid height
+                // Spacing to push content below the header
+                const SizedBox(height: 24),
 
-                // Settings & Support Section
+                // KYC & Profile Sections
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      _buildKycStatusSection(context, appState.nickname),
+                      const SizedBox(height: 12),
+                      _buildReferralTile(context),
+                      const SizedBox(height: 24),
+                      
+                      // Transaction Ledger Section
+                      Row(
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 20,
+                            color: Colors.green.shade600,
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Transaction Ledger',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textDark,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _buildSettingsTile(
+                        title: 'Withdrawal History',
+                        icon: Icons.history_rounded,
+                        iconColor: AppColors.primaryBlue,
+                        iconBgColor: AppColors.primaryBlue.withOpacity(0.1),
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const WithdrawalHistoryScreen()),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Settings & Support Section
                       Row(
                         children: [
                           Container(
@@ -285,6 +258,7 @@ class ProfileScreen extends StatelessWidget {
     required IconData icon,
     required Color iconColor,
     required Color iconBgColor,
+    VoidCallback? onTap,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -318,7 +292,374 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
         trailing: const Icon(Icons.chevron_right, color: Colors.grey),
-        onTap: () {},
+        onTap: onTap ?? () {},
+      ),
+    );
+  }
+
+  Widget _buildReferralTile(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ReferralScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [Color(0xFF7C3AED), Color(0xFF4F46E5)],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF7C3AED).withOpacity(0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.card_giftcard_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Refer & Earn',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Invite friends and grow your network',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.white70),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Reads KYC status from Firestore and shows the correct card
+  Widget _buildKycStatusSection(BuildContext context, String nickname) {
+    // Query by expertId (new submissions) — no orderBy to avoid index requirement
+    final stream = FirebaseFirestore.instance
+        .collection('kyc_requests')
+        .where('expertId', isEqualTo: nickname.toLowerCase())
+        .limit(1)
+        .snapshots();
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: stream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          // Fallback: query by accountHolder name for old documents
+          return _buildKycByAccountHolder(context, nickname);
+        }
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildKycButton(context);
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          // No doc with expertId — try accountHolder for pre-fix submissions
+          return _buildKycByAccountHolder(context, nickname);
+        }
+
+        final data = docs.first.data() as Map<String, dynamic>;
+        return _kycCardForStatus(context, data['status'] ?? 'pending');
+      },
+    );
+  }
+
+  // Fallback query for documents submitted before expertId was added
+  Widget _buildKycByAccountHolder(BuildContext context, String nickname) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('kyc_requests')
+          .limit(5)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildKycButton(context);
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) return _buildKycButton(context);
+
+        // Find any doc where accountHolder or panName matches
+        QueryDocumentSnapshot? match;
+        for (final doc in docs) {
+          final d = doc.data() as Map<String, dynamic>;
+          final holder = (d['accountHolder'] ?? '').toString().toLowerCase();
+          final pan = (d['panName'] ?? '').toString().toLowerCase();
+          final eid = (d['expertId'] ?? '').toString().toLowerCase();
+          if (holder == nickname.toLowerCase() ||
+              pan == nickname.toLowerCase() ||
+              eid == nickname.toLowerCase()) {
+            match = doc;
+            break;
+          }
+        }
+
+        if (match == null) return _buildKycButton(context);
+
+        final data = match.data() as Map<String, dynamic>;
+        return _kycCardForStatus(context, data['status'] ?? 'pending');
+      },
+    );
+  }
+
+  Widget _kycCardForStatus(BuildContext context, String status) {
+    if (status == 'approved') return _buildKycApprovedCard();
+    if (status == 'rejected') return _buildKycRejectedCard(context);
+    return _buildKycPendingCard();
+  }
+
+  Widget _buildKycApprovedCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.green.shade400, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.verified_user_rounded,
+                color: Colors.green.shade600, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KYC Successful ✅',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green.shade700,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                const Text(
+                  'You can now withdraw your earnings.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textGrey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKycPendingCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.shade300, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child:
+                Icon(Icons.hourglass_top_rounded, color: Colors.orange.shade700, size: 22),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'KYC Under Review ⏳',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'We\'ll verify your details within 24–48 hours.',
+                  style: TextStyle(fontSize: 12, color: AppColors.textGrey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildKycRejectedCard(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const KycPanScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.red.shade300, width: 1.5),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child:
+                  Icon(Icons.cancel_rounded, color: Colors.red.shade600, size: 22),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'KYC Rejected ❌',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Tap to re-submit your KYC details.',
+                    style: TextStyle(fontSize: 12, color: AppColors.textGrey),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: Colors.grey),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildKycButton(BuildContext context) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const KycPanScreen()),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.primaryBlue.withOpacity(0.4), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primaryBlue.withOpacity(0.06),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.lightBlueBg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.verified_user_rounded,
+                color: AppColors.primaryBlue,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 14),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'KYC Verification',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Complete to enable withdrawals',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textGrey,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.primaryBlue,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Text(
+                'Start KYC',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/app_state.dart';
@@ -8,6 +9,8 @@ import '../services/call_service.dart';
 import '../services/matching_service.dart';
 import 'active_call_page.dart';
 import 'phone_auth_screen.dart';
+import 'upgrade_program_screen.dart';
+import 'withdraw_screen.dart';
 import '../services/notification_service.dart';
 
 class ExpertHomeScreen extends StatefulWidget {
@@ -195,9 +198,9 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
             child: const Text('Decline'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(dialogCtx);
-              Navigator.push(
+              await Navigator.push(
                 context,
                 MaterialPageRoute(
                   builder: (_) => ActiveCallPage(
@@ -211,6 +214,9 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
                   ),
                 ),
               );
+              if (mounted) {
+                _fetchExpertStats();
+              }
             },
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.successGreen,
@@ -222,13 +228,74 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     );
   }
 
-  void _showWithdrawDialog() {
+  /// Check KYC status in Firestore, then route accordingly
+  Future<void> _showWithdrawDialog() async {
     if (_redeemableBalance <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('No redeemable balance to withdraw.'),
           backgroundColor: AppColors.textGrey));
       return;
     }
+
+    final nickname = context.read<AppState>().nickname.toLowerCase();
+
+    // Query KYC status from Firestore
+    bool kycApproved = false;
+    try {
+      // Check by expertId (new submissions)
+      var snap = await FirebaseFirestore.instance
+          .collection('kyc_requests')
+          .where('expertId', isEqualTo: nickname)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isEmpty) {
+        // Fallback: check all docs for matching accountHolder
+        final all = await FirebaseFirestore.instance
+            .collection('kyc_requests')
+            .limit(10)
+            .get();
+        for (final doc in all.docs) {
+          final d = doc.data();
+          final holder = (d['accountHolder'] ?? '').toString().toLowerCase();
+          final eid = (d['expertId'] ?? '').toString().toLowerCase();
+          if (holder == nickname || eid == nickname) {
+            snap = await FirebaseFirestore.instance
+                .collection('kyc_requests')
+                .where(FieldPath.documentId, isEqualTo: doc.id)
+                .get();
+            break;
+          }
+        }
+      }
+
+      if (snap.docs.isNotEmpty) {
+        final status = snap.docs.first.data()['status'] ?? 'pending';
+        kycApproved = status == 'approved';
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    if (kycApproved) {
+      // ✅ KYC done — show the standard popup
+      _showKycApprovedWithdrawDialog();
+    } else {
+      // ❌ KYC not done — open WithdrawScreen with TDS warning
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => WithdrawScreen(amount: _redeemableBalance),
+        ),
+      );
+      if (result == true && mounted) {
+        setState(() => _redeemableBalance = 0.0);
+      }
+    }
+  }
+
+  /// Standard withdraw popup shown only when KYC is approved
+  void _showKycApprovedWithdrawDialog() {
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
@@ -620,6 +687,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
 
   // ── 3. Stats Card ──────────────────────────────────────────────────────
   Widget _buildStatsCard() {
+    final String expertId = context.read<AppState>().nickname.toLowerCase();
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -766,6 +834,54 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
                       ),
                     ),
                   ),
+                  const SizedBox(height: 12),
+                  // Upgrade Program button
+                  GestureDetector(
+                    onTap: _showUpgradeDialog,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(30),
+                        gradient: const LinearGradient(
+                          colors: [
+                            Color(0xFFFFA000), // Amber 700
+                            Color(0xFFFFD54F), // Amber 300
+                          ],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.amber.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.workspace_premium_rounded,
+                            size: 18,
+                            color: Color(0xFF5D4037),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Upgrade Program',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF5D4037),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (expertId.isNotEmpty)
+                    _buildWithdrawalRequestsList(expertId),
                 ],
               ),
             ),
@@ -824,6 +940,212 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
                   color: AppColors.textGrey,
                   fontWeight: FontWeight.w500)),
         ],
+      ),
+    );
+  }
+
+  Widget _buildWithdrawalRequestsList(String expertId) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('withdrawal_requests')
+          .where('expertId', isEqualTo: expertId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.hasData ? snapshot.data!.docs : [];
+        
+        if (docs.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        // Sort in memory by requestedAt descending
+        final sortedDocs = List<QueryDocumentSnapshot>.from(docs);
+        sortedDocs.sort((a, b) {
+          final aTime = (a.data() as Map<String, dynamic>)['requestedAt'] as Timestamp?;
+          final bTime = (b.data() as Map<String, dynamic>)['requestedAt'] as Timestamp?;
+          if (aTime == null && bTime == null) return 0;
+          if (aTime == null) return 1;
+          if (bTime == null) return -1;
+          return bTime.compareTo(aTime);
+        });
+
+        return Column(
+          children: sortedDocs.map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return _buildWithdrawalRequestCard(data, doc.id);
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget _buildWithdrawalRequestCard(Map<String, dynamic> data, String docId) {
+    final status = data['status'] ?? 'pending';
+    final amount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+    final timestamp = data['requestedAt'] as Timestamp?;
+
+    // Format timestamp
+    String formattedTime = '';
+    if (timestamp != null) {
+      final dateTime = timestamp.toDate();
+      final hourNum = dateTime.hour > 12
+          ? dateTime.hour - 12
+          : (dateTime.hour == 0 ? 12 : dateTime.hour);
+      final amPm = dateTime.hour >= 12 ? 'pm' : 'am';
+      final minute = dateTime.minute.toString().padLeft(2, '0');
+      final day = dateTime.day.toString().padLeft(2, '0');
+      final month = dateTime.month.toString().padLeft(2, '0');
+      final year = dateTime.year.toString().substring(2);
+      formattedTime = '$hourNum:$minute $amPm • $day/$month/$year';
+    } else {
+      formattedTime = 'Just now';
+    }
+
+    // Short txn ID for display (e.g. first 8 characters)
+    final txnIdDisplay = docId.length > 8 ? docId.substring(0, 8).toUpperCase() : docId.toUpperCase();
+
+    Color statusColor = const Color(0xFFF59E0B); // Pending orange
+    String statusText = 'Pending';
+    if (status == 'approved' || status == 'success') {
+      statusColor = Colors.green;
+      statusText = 'Successful';
+    } else if (status == 'failed' || status == 'rejected') {
+      statusColor = Colors.red;
+      statusText = 'Failed';
+    } else {
+      statusText = status.substring(0, 1).toUpperCase() + status.substring(1);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left status bar/line
+              Container(
+                width: 4,
+                color: statusColor,
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Top Info Row
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'SajniRe Cashout (₹${amount.toStringAsFixed(0)})',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.primaryBlue,
+                                ),
+                              ),
+                              Text(
+                                statusText,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: statusColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '$formattedTime • Txn ID: $txnIdDisplay',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.textGrey,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              GestureDetector(
+                                onTap: () {
+                                  Clipboard.setData(ClipboardData(text: docId));
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Transaction ID copied!'),
+                                      duration: Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                                child: const Icon(
+                                  Icons.copy_rounded,
+                                  size: 14,
+                                  color: AppColors.textGrey,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Gray bottom bar
+                    Container(
+                      color: const Color(0xFFF8FAFC), // Very light grey
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.headset_mic_outlined,
+                            size: 15,
+                            color: AppColors.primaryBlue.withOpacity(0.8),
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Help',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.primaryBlue,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showUpgradeDialog() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const UpgradeProgramScreen(),
       ),
     );
   }

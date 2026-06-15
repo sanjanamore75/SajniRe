@@ -39,6 +39,9 @@ class AppState extends ChangeNotifier {
   double _walletBalance = 0.0;
   double get walletBalance => _walletBalance;
 
+  bool _hasUsedFreeCall = false;
+  bool get hasUsedFreeCall => _hasUsedFreeCall;
+
   // Setters
   void setMobileNumber(String number) {
     _mobileNumber = number;
@@ -104,6 +107,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setHasUsedFreeCall(bool used) {
+    _hasUsedFreeCall = used;
+    notifyListeners();
+  }
+
   void addWalletBalance(double amount) {
     _walletBalance += amount;
     notifyListeners();
@@ -130,6 +138,7 @@ class AppState extends ChangeNotifier {
     _isOnline = false;
     _totalEarnings = 0.0;
     _walletBalance = 0.0;
+    _hasUsedFreeCall = false;
     notifyListeners();
   }
 }

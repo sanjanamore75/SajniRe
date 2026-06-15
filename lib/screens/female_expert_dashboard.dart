@@ -35,10 +35,29 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
     // Start listening for calls if already online
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final appState = context.read<AppState>();
+      _loadEarningsFromFirestore(appState);
       if (appState.isOnline) {
         _startIncomingCallListener(appState.nickname.toLowerCase());
       }
     });
+  }
+
+  Future<void> _loadEarningsFromFirestore(AppState appState) async {
+    try {
+      final mobile = appState.mobileNumber;
+      if (mobile.isEmpty) return;
+      final doc = await FirebaseFirestore.instance
+          .collection('experts')
+          .doc(mobile)
+          .get();
+      if (doc.exists) {
+        final data = doc.data()!;
+        final earnings = (data['totalEarnings'] as num?)?.toDouble() ?? 0.0;
+        appState.addEarnings(earnings - appState.totalEarnings); // sync to Firestore value
+      }
+    } catch (e) {
+      debugPrint('Error loading earnings: $e');
+    }
   }
 
   @override
@@ -81,7 +100,6 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
               ? appState.selectedAvatar
               : 'assets/avatars/female_1.png',
           'languages': appState.primaryLanguage,
-          'rating': 4.8,
           'isOnline': value,
           'categories': ['All', 'Relationship', 'Star'],
           'lastUpdated': FieldValue.serverTimestamp(),

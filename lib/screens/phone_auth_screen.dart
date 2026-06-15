@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
 import 'gender_selection_screen.dart';
@@ -15,10 +17,15 @@ class PhoneAuthScreen extends StatefulWidget {
 
 class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _referralController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final PageController _bannerController = PageController();
   int _currentBannerPage = 0;
   Timer? _bannerTimer;
+  bool _referralValid = false;
+  bool _referralChecking = false;
+  String? _referralError;
+  String? _referredByCode;
 
   final List<Map<String, dynamic>> _bannerSlides = [
     {
@@ -63,16 +70,88 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   @override
   void dispose() {
     _phoneController.dispose();
+    _referralController.dispose();
     _bannerController.dispose();
     _bannerTimer?.cancel();
     super.dispose();
   }
 
-  void _onGetOtpPressed() {
+  // Check if referral code exists in Firestore and is valid
+  Future<void> _validateReferralCode(String code) async {
+    if (code.trim().isEmpty) {
+      setState(() {
+        _referralValid = false;
+        _referralError = null;
+        _referredByCode = null;
+      });
+      return;
+    }
+    setState(() {
+      _referralChecking = true;
+      _referralError = null;
+    });
+    try {
+      // Check experts collection for matching referral code
+      final snap = await FirebaseFirestore.instance
+          .collection('experts')
+          .where('referralCode', isEqualTo: code.trim().toUpperCase())
+          .limit(1)
+          .get();
+      if (snap.docs.isNotEmpty) {
+        setState(() {
+          _referralValid = true;
+          _referralError = null;
+          _referredByCode = code.trim().toUpperCase();
+        });
+      } else {
+        setState(() {
+          _referralValid = false;
+          _referralError = 'Invalid referral code';
+          _referredByCode = null;
+        });
+      }
+    } catch (_) {
+      setState(() {
+        _referralValid = false;
+        _referralError = 'Could not verify code. Try again.';
+      });
+    } finally {
+      setState(() => _referralChecking = false);
+    }
+  }
+
+  void _onGetOtpPressed() async {
     if (_formKey.currentState!.validate()) {
-      // Save phone number in Provider
-      context.read<AppState>().setMobileNumber(_phoneController.text.trim());
-      // Navigate to Gender Selection Screen
+      final phone = _phoneController.text.trim();
+      context.read<AppState>().setMobileNumber(phone);
+      // If referral code was valid, save referral entry in Firestore
+      if (_referralValid && _referredByCode != null) {
+        final code = _referredByCode!;
+        await FirebaseFirestore.instance.collection('referrals').add({
+          'referralCode': code,
+          'referredPhone': '+91$phone',
+          'referredName': phone,
+          'joinedAt': FieldValue.serverTimestamp(),
+          'status': 'joined',
+        });
+
+        // Check if expert has now reached 5 referrals → promote to Silver
+        final allReferrals = await FirebaseFirestore.instance
+            .collection('referrals')
+            .where('referralCode', isEqualTo: code)
+            .get();
+        if (allReferrals.docs.length >= 5) {
+          // Find the expert document and update their tier to silver
+          final expertSnap = await FirebaseFirestore.instance
+              .collection('experts')
+              .where('referralCode', isEqualTo: code)
+              .limit(1)
+              .get();
+          if (expertSnap.docs.isNotEmpty) {
+            await expertSnap.docs.first.reference.update({'tier': 'silver'});
+          }
+        }
+      }
       Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const GenderSelectionScreen()),
@@ -298,7 +377,109 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
                                 ],
                               ),
                             ),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 16),
+                            // Optional Referral Code Field
+                            Container(
+                              decoration: BoxDecoration(
+                                color: _referralValid
+                                    ? Colors.green.shade50
+                                    : AppTheme.inputBg,
+                                borderRadius: BorderRadius.circular(15),
+                                border: Border.all(
+                                  color: _referralValid
+                                      ? Colors.green.shade400
+                                      : _referralError != null
+                                          ? Colors.red.shade300
+                                          : AppTheme.borderGrey,
+                                  width: 1.2,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _referralValid
+                                        ? Icons.check_circle_rounded
+                                        : Icons.card_giftcard_rounded,
+                                    color: _referralValid
+                                        ? Colors.green
+                                        : AppTheme.textGrey,
+                                    size: 20,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _referralController,
+                                      textCapitalization:
+                                          TextCapitalization.characters,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600,
+                                        color: _referralValid
+                                            ? Colors.green.shade700
+                                            : AppTheme.textBlack,
+                                        letterSpacing: 2,
+                                      ),
+                                      decoration: InputDecoration(
+                                        hintText: 'Referral Code (Optional)',
+                                        hintStyle: const TextStyle(
+                                          color: AppTheme.textGrey,
+                                          fontWeight: FontWeight.normal,
+                                          letterSpacing: 0,
+                                          fontSize: 14,
+                                        ),
+                                        filled: false,
+                                        border: InputBorder.none,
+                                        enabledBorder: InputBorder.none,
+                                        focusedBorder: InputBorder.none,
+                                        contentPadding: EdgeInsets.zero,
+                                        errorText: _referralError,
+                                      ),
+                                      onChanged: (v) {
+                                        if (v.trim().length >= 6) {
+                                          _validateReferralCode(v);
+                                        } else if (v.isEmpty) {
+                                          setState(() {
+                                            _referralValid = false;
+                                            _referralError = null;
+                                            _referredByCode = null;
+                                          });
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  if (_referralChecking)
+                                    const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: AppTheme.primaryBlue),
+                                    ),
+                                  if (_referralValid)
+                                    const Text(
+                                      'Applied!',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.green,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            if (_referralValid)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6, left: 4),
+                                child: Text(
+                                  '🎉 Referral code applied successfully!',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.w500),
+                                ),
+                              ),
+                            const SizedBox(height: 20),
                             // Get OTP Button
                             ElevatedButton(
                               onPressed: _onGetOtpPressed,

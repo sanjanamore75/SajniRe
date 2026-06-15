@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/app_state.dart';
 import '../../theme/app_theme.dart';
-import '../female_expert_dashboard.dart';
+import '../main_navigation.dart';
 
 class AudioVerificationPage extends StatefulWidget {
   const AudioVerificationPage({super.key});
@@ -70,7 +70,7 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
     // Navigate to Female Expert Dashboard and clear history
     Navigator.pushAndRemoveUntil(
       context,
-      MaterialPageRoute(builder: (context) => const FemaleExpertDashboard()),
+      MaterialPageRoute(builder: (context) => const MainNavigation()),
       (route) => false,
     );
   }

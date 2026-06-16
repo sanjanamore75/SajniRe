@@ -1,10 +1,13 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 class CallService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseDatabase _database = FirebaseDatabase.instanceFor(
+    app: FirebaseDatabase.instance.app,
+    databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+  );
 
   RTCPeerConnection? _peerConnection;
   MediaStream? _localStream;
@@ -62,24 +65,22 @@ class CallService {
 
   /// Listen for incoming calls for an expert.
   /// Trigger [onCallReceived] when another user creates a call with status 'calling'.
-  StreamSubscription<QuerySnapshot> listenForIncomingCalls({
+  StreamSubscription<DatabaseEvent> listenForIncomingCalls({
     required String expertId,
     required Function(String callRoomId, String callerId) onCallReceived,
   }) {
-    return _firestore
-        .collection('calls')
-        .where('receiverId', isEqualTo: expertId)
-        .where('status', isEqualTo: 'calling')
-        .snapshots()
-        .listen((snapshot) {
-      for (var change in snapshot.docChanges) {
-        if (change.type == DocumentChangeType.added) {
-          final data = change.doc.data();
-          if (data != null) {
-            final callRoomId = change.doc.id;
-            final callerId = data['callerId'] ?? 'unknown';
-            onCallReceived(callRoomId, callerId);
-          }
+    return _database
+        .ref('calls')
+        .orderByChild('receiverId')
+        .equalTo(expertId)
+        .onChildAdded
+        .listen((event) {
+      if (event.snapshot.value != null) {
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+        if (data['status'] == 'calling') {
+          final callRoomId = event.snapshot.key!;
+          final callerId = data['callerId'] ?? 'unknown';
+          onCallReceived(callRoomId, callerId);
         }
       }
     }, onError: (e) {
@@ -123,14 +124,14 @@ class CallService {
         onRemoteStreamListener?.call(_remoteStream!);
       };
 
-      // 5. Create call document in Firestore
-      final DocumentReference roomRef = _firestore.collection('calls').doc();
-      final String roomId = roomRef.id;
+      // 5. Create call document in RTDB
+      final DatabaseReference roomRef = _database.ref('calls').push();
+      final String roomId = roomRef.key!;
 
       // 6. Handle local ICE candidates and upload them
       _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
         if (candidate.candidate != null) {
-          roomRef.collection('callerCandidates').add({
+          roomRef.child('callerCandidates').push().set({
             'candidate': candidate.candidate,
             'sdpMid': candidate.sdpMid,
             'sdpMLineIndex': candidate.sdpMLineIndex,
@@ -151,21 +152,20 @@ class CallService {
         'callerId': callerId,
         'receiverId': expertId,
         'status': 'calling',
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': ServerValue.timestamp,
       });
 
       bool remoteDescriptionSet = false;
       final List<RTCIceCandidate> pendingRemoteCandidates = [];
 
       // 9. Subscribe to call document updates to catch SDP Answer
-      final roomSub = roomRef.snapshots().listen((snapshot) async {
-        if (!snapshot.exists) {
+      final roomSub = roomRef.onValue.listen((event) async {
+        if (event.snapshot.value == null) {
           onCallEndedListener?.call();
           return;
         }
 
-        final data = snapshot.data() as Map<String, dynamic>?;
-        if (data == null) return;
+        final data = Map<String, dynamic>.from(event.snapshot.value as Map);
 
         // Check if call was ended remotely
         if (data['status'] == 'ended') {
@@ -176,7 +176,7 @@ class CallService {
         // Set Remote Description when answer is received
         if (data['answer'] != null && !remoteDescriptionSet) {
           remoteDescriptionSet = true;
-          final answerMap = data['answer'];
+          final answerMap = Map<String, dynamic>.from(data['answer']);
           final description = RTCSessionDescription(
             answerMap['sdp'],
             answerMap['type'],
@@ -194,24 +194,20 @@ class CallService {
 
       // 10. Subscribe to remote ICE candidates (expertCandidates)
       final candidatesSub = roomRef
-          .collection('expertCandidates')
-          .snapshots()
-          .listen((snapshot) async {
-        for (var change in snapshot.docChanges) {
-          if (change.type == DocumentChangeType.added) {
-            final data = change.doc.data();
-            if (data != null && _peerConnection != null) {
-              final candidate = RTCIceCandidate(
-                data['candidate'],
-                data['sdpMid'],
-                data['sdpMLineIndex'],
-              );
-              if (remoteDescriptionSet) {
-                await _peerConnection!.addCandidate(candidate);
-              } else {
-                pendingRemoteCandidates.add(candidate);
-              }
-            }
+          .child('expertCandidates')
+          .onChildAdded
+          .listen((event) async {
+        if (event.snapshot.value != null && _peerConnection != null) {
+          final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+          final candidate = RTCIceCandidate(
+            data['candidate'],
+            data['sdpMid'],
+            data['sdpMLineIndex'],
+          );
+          if (remoteDescriptionSet) {
+            await _peerConnection!.addCandidate(candidate);
+          } else {
+            pendingRemoteCandidates.add(candidate);
           }
         }
       });
@@ -234,14 +230,14 @@ class CallService {
     onRemoteStreamListener = onRemoteStream;
     onCallEndedListener = onCallEnded;
     try {
-      final DocumentReference roomRef = _firestore.collection('calls').doc(callRoomId);
+      final DatabaseReference roomRef = _database.ref('calls/$callRoomId');
       final roomSnapshot = await roomRef.get();
       if (!roomSnapshot.exists) {
         throw Exception('Call room not found');
       }
 
-      final roomData = roomSnapshot.data() as Map<String, dynamic>;
-      final offerMap = roomData['offer'];
+      final roomData = Map<String, dynamic>.from(roomSnapshot.value as Map);
+      final offerMap = roomData['offer'] != null ? Map<String, dynamic>.from(roomData['offer']) : null;
       if (offerMap == null) {
         throw Exception('No SDP Offer found in room');
       }
@@ -275,7 +271,7 @@ class CallService {
       // 5. Handle local ICE candidates and upload them
       _peerConnection!.onIceCandidate = (RTCIceCandidate candidate) {
         if (candidate.candidate != null) {
-          roomRef.collection('expertCandidates').add({
+          roomRef.child('expertCandidates').push().set({
             'candidate': candidate.candidate,
             'sdpMid': candidate.sdpMid,
             'sdpMLineIndex': candidate.sdpMLineIndex,
@@ -294,7 +290,7 @@ class CallService {
       final RTCSessionDescription answer = await _peerConnection!.createAnswer();
       await _peerConnection!.setLocalDescription(answer);
 
-      // 8. Update Firestore document with SDP Answer and change status to connected
+      // 8. Update RTDB document with SDP Answer and change status to connected
       await roomRef.update({
         'answer': {
           'sdp': answer.sdp,
@@ -304,16 +300,8 @@ class CallService {
       });
 
       // 9. Subscribe to call document updates to monitor ended state
-      final roomSub = roomRef.snapshots().listen((snapshot) {
-        if (!snapshot.exists) {
-          onCallEndedListener?.call();
-          return;
-        }
-
-        final data = snapshot.data() as Map<String, dynamic>?;
-        if (data == null) return;
-
-        if (data['status'] == 'ended') {
+      final roomSub = roomRef.child('status').onValue.listen((event) {
+        if (event.snapshot.value == null || event.snapshot.value == 'ended') {
           onCallEndedListener?.call();
         }
       });
@@ -321,22 +309,18 @@ class CallService {
 
       // 10. Subscribe to remote ICE candidates (callerCandidates)
       final candidatesSub = roomRef
-          .collection('callerCandidates')
-          .snapshots()
-          .listen((snapshot) {
-        for (var change in snapshot.docChanges) {
-          if (change.type == DocumentChangeType.added) {
-            final data = change.doc.data();
-            if (data != null && _peerConnection != null) {
-              _peerConnection!.addCandidate(
-                RTCIceCandidate(
-                  data['candidate'],
-                  data['sdpMid'],
-                  data['sdpMLineIndex'],
-                ),
-              );
-            }
-          }
+          .child('callerCandidates')
+          .onChildAdded
+          .listen((event) {
+        if (event.snapshot.value != null && _peerConnection != null) {
+          final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+          _peerConnection!.addCandidate(
+            RTCIceCandidate(
+              data['candidate'],
+              data['sdpMid'],
+              data['sdpMLineIndex'],
+            ),
+          );
         }
       });
       _subscriptions.add(candidatesSub);
@@ -347,18 +331,14 @@ class CallService {
     }
   }
 
-  /// Hangs up and clean up WebRTC resources and deletes the Firestore call document
+  /// Hangs up and clean up WebRTC resources and deletes the RTDB call document
   Future<void> endCall(String callRoomId) async {
     try {
-      final DocumentReference roomRef = _firestore.collection('calls').doc(callRoomId);
+      final DatabaseReference roomRef = _database.ref('calls/$callRoomId');
       
-      // Update room status to ended and delete document
+      // Update room status to ended and remove node
       await roomRef.update({'status': 'ended'});
-      
-      // Delete subcollections to avoid database bloat
-      await _deleteCollection(roomRef.collection('callerCandidates'));
-      await _deleteCollection(roomRef.collection('expertCandidates'));
-      await roomRef.delete();
+      await roomRef.remove();
     } catch (e) {
       debugPrint('Error ending call document: $e');
     } finally {
@@ -368,7 +348,7 @@ class CallService {
 
   /// Cleans up local media streams, peer connections, and cancels active listeners
   Future<void> disposeCall() async {
-    // Cancel all Firestore stream subscriptions
+    // Cancel all RTDB stream subscriptions
     for (var sub in _subscriptions) {
       await sub.cancel();
     }
@@ -389,14 +369,6 @@ class CallService {
     if (_peerConnection != null) {
       await _peerConnection!.close();
       _peerConnection = null;
-    }
-  }
-
-  /// Helper helper to delete all documents in a subcollection
-  Future<void> _deleteCollection(CollectionReference collection) async {
-    final snapshots = await collection.get();
-    for (var doc in snapshots.docs) {
-      await doc.reference.delete();
     }
   }
 }

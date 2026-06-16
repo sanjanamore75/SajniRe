@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'dart:math' as math;
 import '../models/female_expert.dart';
 import '../providers/app_state.dart';
@@ -72,14 +73,15 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
       bool isBusy = true;
       try {
         final expertId = widget.requestedExpert!.nickname.toLowerCase();
-        final docSnap = await FirebaseFirestore.instance
-            .collection('experts_queue')
-            .doc(expertId)
+        final docSnap = await FirebaseDatabase.instanceFor(
+            app: FirebaseDatabase.instance.app,
+            databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+          ).ref('experts_queue/$expertId')
             .get();
 
         if (docSnap.exists) {
-          final data = docSnap.data();
-          if (data != null && data['status'] == 'waiting') {
+          final data = Map<dynamic, dynamic>.from(docSnap.value as Map);
+          if (data['status'] == 'waiting') {
             isBusy = false;
           }
         }

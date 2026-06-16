@@ -93,6 +93,7 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
         await _matchingService.setExpertOnlineStatus(expertId, value);
         await FirebaseFirestore.instance.collection('experts').doc(expertId).set({
           'nickname': appState.nickname,
+          'mobileNumber': appState.mobileNumber,
           'age': 2026 - appState.birthYear,
           'city': 'Online',
           'pricePerMin': 5,

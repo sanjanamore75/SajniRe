@@ -341,13 +341,13 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
               liveExperts.add(
                 FemaleExpert(
                   nickname: nickname,
-                  age: data['age'] ?? 20,
+                  age: (data['age'] as num?)?.toInt() ?? 20,
                   city: data['city'] ?? 'Online',
-                  pricePerMin: data['pricePerMin'] ?? 5,
+                  pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
                   bio: data['bio'] ?? '',
                   avatarPath:
                       data['avatarPath'] ?? 'assets/avatars/female_1.png',
-                  languages: data['languages'] ?? 'Hindi',
+                  languages: data['languages']?.toString() ?? 'Hindi',
                   rating: (() {
                     final totalSecs = (data['totalTalkSeconds'] as num?)?.toDouble() ?? 0;
                     // 0s → 3.5, 36000s (10hrs) → 5.0, always clamped to [3.5, 5.0]
@@ -356,11 +356,24 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                     return double.parse((stored ?? computed.clamp(3.5, 5.0)).toStringAsFixed(1));
                   })(),
                   isOnline: isOnline,
-                  categories: List<String>.from(data['categories'] ?? ['All']),
+                  categories: List<String>.from((data['categories'] as List<dynamic>?) ?? ['All']),
                 ),
               );
             } catch (e) {
               debugPrint('Error parsing expert doc: $e');
+              // To make debugging easier, add a dummy expert with the error message
+              liveExperts.add(FemaleExpert(
+                nickname: 'Error: ${e.toString().split('\n').first}',
+                age: 0,
+                city: 'Error',
+                pricePerMin: 0,
+                bio: 'Error parsing doc ${doc.id}',
+                avatarPath: 'assets/avatars/female_1.png',
+                languages: 'None',
+                rating: 0.0,
+                isOnline: true,
+                categories: ['All'],
+              ));
             }
           }
         }
@@ -680,9 +693,9 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
         final data = doc.data() as Map<String, dynamic>;
         final expert = FemaleExpert(
           nickname: data['nickname'] ?? nickname,
-          age: data['age'] ?? 20,
+          age: (data['age'] as num?)?.toInt() ?? 20,
           city: data['city'] ?? '',
-          pricePerMin: (data['pricePerMin'] ?? 5).toDouble(),
+          pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
           bio: data['bio'] ?? '',
           avatarPath: data['avatarPath'] ?? 'assets/avatars/female_1.png',
           languages: data['languages'] ?? 'Hindi',

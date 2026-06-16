@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'call_service.dart';
@@ -18,7 +18,10 @@ class MatchController {
 }
 
 class MatchingService {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseDatabase _database = FirebaseDatabase.instanceFor(
+    app: FirebaseDatabase.instance.app,
+    databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+  );
   final CallService _callService;
 
   MatchingService(this._callService);
@@ -28,16 +31,16 @@ class MatchingService {
   /// Female Expert Logic (Joining the Queue)
   Future<void> setExpertOnlineStatus(String expertId, bool isOnline) async {
     try {
-      final docRef = _firestore.collection('experts_queue').doc(expertId);
+      final docRef = _database.ref('experts_queue/$expertId');
       if (isOnline) {
         await docRef.set({
           'expertId': expertId,
           'status': 'waiting',
-          'timestamp': FieldValue.serverTimestamp(),
+          'timestamp': ServerValue.timestamp,
         });
         debugPrint('Expert $expertId added/updated in experts_queue.');
       } else {
-        await docRef.delete();
+        await docRef.remove();
         debugPrint('Expert $expertId removed from experts_queue.');
       }
     } catch (e) {
@@ -78,28 +81,28 @@ class MatchingService {
   }) async {
     try {
       // 1. Check if an expert is already waiting
-      final querySnapshot = await _firestore
-          .collection('experts_queue')
-          .where('status', isEqualTo: 'waiting')
+      final querySnapshot = await _database
+          .ref('experts_queue')
+          .orderByChild('status')
+          .equalTo('waiting')
           .get();
 
       if (controller.isCancelled) return;
 
-      if (querySnapshot.docs.isNotEmpty) {
-        // Sort waiting experts in memory by oldest timestamp to avoid index creation issues
-        final docs = List<QueryDocumentSnapshot>.from(querySnapshot.docs);
+      if (querySnapshot.value != null) {
+        final data = Map<dynamic, dynamic>.from(querySnapshot.value as Map);
+        final docs = data.entries.toList();
+
+        // Sort waiting experts in memory by oldest timestamp
         docs.sort((a, b) {
-          final tA = a.get('timestamp') as Timestamp?;
-          final tB = b.get('timestamp') as Timestamp?;
-          if (tA == null && tB == null) return 0;
-          if (tA == null) return 1;
-          if (tB == null) return -1;
+          final tA = a.value['timestamp'] is int ? a.value['timestamp'] as int : 0;
+          final tB = b.value['timestamp'] is int ? b.value['timestamp'] as int : 0;
           return tA.compareTo(tB);
         });
 
         for (var doc in docs) {
           if (controller.isCancelled) return;
-          final expertId = doc.id;
+          final expertId = doc.key as String;
           final locked = await _lockExpertInTransaction(expertId, callerId);
           if (locked) {
             try {
@@ -130,26 +133,28 @@ class MatchingService {
       // 2. If no expert found, subscribe to experts_queue updates
       if (controller.isCancelled) return;
 
-      final subscription = _firestore
-          .collection('experts_queue')
-          .where('status', isEqualTo: 'waiting')
-          .snapshots()
-          .listen((snapshot) async {
+      final subscription = _database
+          .ref('experts_queue')
+          .orderByChild('status')
+          .equalTo('waiting')
+          .onValue
+          .listen((event) async {
         if (controller.isCancelled) return;
 
-        final docs = List<QueryDocumentSnapshot>.from(snapshot.docs);
+        if (event.snapshot.value == null) return;
+        
+        final data = Map<dynamic, dynamic>.from(event.snapshot.value as Map);
+        final docs = data.entries.toList();
+
         docs.sort((a, b) {
-          final tA = a.get('timestamp') as Timestamp?;
-          final tB = b.get('timestamp') as Timestamp?;
-          if (tA == null && tB == null) return 0;
-          if (tA == null) return 1;
-          if (tB == null) return -1;
+          final tA = a.value['timestamp'] is int ? a.value['timestamp'] as int : 0;
+          final tB = b.value['timestamp'] is int ? b.value['timestamp'] as int : 0;
           return tA.compareTo(tB);
         });
 
         for (var doc in docs) {
           if (controller.isCancelled) return;
-          final expertId = doc.id;
+          final expertId = doc.key as String;
           final locked = await _lockExpertInTransaction(expertId, callerId);
           if (locked) {
             controller.cancel(); // Stop listening
@@ -189,10 +194,10 @@ class MatchingService {
 
   Future<void> _unlockExpert(String expertId) async {
     try {
-      await _firestore.collection('experts_queue').doc(expertId).update({
+      await _database.ref('experts_queue/$expertId').update({
         'status': 'waiting',
-        'lockedBy': FieldValue.delete(),
-        'lockedAt': FieldValue.delete(),
+        'lockedBy': null,
+        'lockedAt': null,
       });
     } catch (e) {
       debugPrint('Error unlocking expert $expertId: $e');
@@ -201,23 +206,21 @@ class MatchingService {
 
   Future<bool> _lockExpertInTransaction(String expertId, String callerId) async {
     try {
-      final docRef = _firestore.collection('experts_queue').doc(expertId);
-      final locked = await _firestore.runTransaction<bool>((transaction) async {
-        final docSnap = await transaction.get(docRef);
-        if (!docSnap.exists) return false;
-
-        final data = docSnap.data();
-        if (data != null && data['status'] == 'waiting') {
-          transaction.update(docRef, {
-            'status': 'in_call',
-            'lockedBy': callerId,
-            'lockedAt': FieldValue.serverTimestamp(),
-          });
-          return true;
+      final docRef = _database.ref('experts_queue/$expertId');
+      final TransactionResult result = await docRef.runTransaction((Object? post) {
+        if (post == null) {
+          return Transaction.abort();
         }
-        return false;
+        Map<String, dynamic> data = Map<String, dynamic>.from(post as Map);
+        if (data['status'] == 'waiting') {
+          data['status'] = 'in_call';
+          data['lockedBy'] = callerId;
+          data['lockedAt'] = ServerValue.timestamp;
+          return Transaction.success(data);
+        }
+        return Transaction.abort();
       });
-      return locked;
+      return result.committed;
     } catch (e) {
       debugPrint('Transaction error locking expert $expertId: $e');
       return false;

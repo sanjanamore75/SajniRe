@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await FirebaseinitializeApp();
+  await Firebase.initializeApp();
   final snap = await FirebaseFirestore.instance.collection('experts').get();
   for (var doc in snap.docs) {
     print("${doc.id} -> ${doc.data()}");

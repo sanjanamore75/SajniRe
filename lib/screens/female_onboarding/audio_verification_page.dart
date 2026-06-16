@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../providers/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../main_navigation.dart';
@@ -62,17 +63,46 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
     });
   }
 
-  void _submit() {
+  void _submit() async {
     // Update state
     final appState = context.read<AppState>();
     appState.setAudioVerified(true);
+
+    final String expertId = appState.nickname.toLowerCase();
+    if (expertId.isNotEmpty) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('experts')
+            .doc(expertId)
+            .set({
+          'nickname': appState.nickname,
+          'mobileNumber': appState.mobileNumber,
+          'age': 2026 - appState.birthYear,
+          'city': 'Online',
+          'pricePerMin': 5,
+          'bio': 'Talk to me about life, love, and everything in between.',
+          'avatarPath': appState.selectedAvatar.isNotEmpty
+              ? appState.selectedAvatar
+              : 'assets/avatars/female_1.png',
+          'languages': appState.primaryLanguage,
+          'rating': 4.8,
+          'isOnline': false, // Offline by default when onboarded
+          'categories': ['All', 'Relationship', 'Star'],
+          'lastUpdated': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        debugPrint('Error saving expert profile at onboarding: $e');
+      }
+    }
     
     // Navigate to Female Expert Dashboard and clear history
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const MainNavigation()),
-      (route) => false,
-    );
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (context) => const MainNavigation()),
+        (route) => false,
+      );
+    }
   }
 
   @override

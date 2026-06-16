@@ -6,8 +6,17 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
   
+  print('=== ALL EXPERTS IN FIRESTORE ===');
   final experts = await FirebaseFirestore.instance.collection('experts').get();
   for (var doc in experts.docs) {
-    print('Expert: ${doc.id} -> ${doc.data()}');
+    final data = doc.data();
+    print('------ DOC: ${doc.id} ------');
+    print('  nickname: ${data['nickname']}');
+    print('  mobileNumber: ${data['mobileNumber']}');
+    print('  isOnline: ${data['isOnline']}');
+    print('  avatarPath: ${data['avatarPath']}');
+    print('  categories: ${data['categories']}');
+    print('  ALL FIELDS: $data');
   }
+  print('DONE');
 }

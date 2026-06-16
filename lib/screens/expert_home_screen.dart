@@ -124,14 +124,17 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     setState(() => _isAudioOn = value);
 
     final String expertId = appState.nickname.toLowerCase();
+    debugPrint('[STATUS] nickname=${appState.nickname} expertId=$expertId mobileNumber=${appState.mobileNumber} value=$value');
     if (expertId.isNotEmpty) {
       try {
         await _matchingService.setExpertOnlineStatus(expertId, value);
+        debugPrint('[STATUS] RTDB queue updated for $expertId → $value');
         await FirebaseFirestore.instance
             .collection('experts')
             .doc(expertId)
             .set({
           'nickname': appState.nickname,
+          'mobileNumber': appState.mobileNumber,
           'age': 2026 - appState.birthYear,
           'city': 'Online',
           'pricePerMin': 5,
@@ -145,9 +148,12 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
           'categories': ['All', 'Relationship', 'Star'],
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+        debugPrint('[STATUS] Firestore updated experts/$expertId isOnline=$value');
       } catch (e) {
-        debugPrint('Error updating online status: $e');
+        debugPrint('[STATUS] ERROR updating online status: $e');
       }
+    } else {
+      debugPrint('[STATUS] expertId is EMPTY — skipping Firestore update!');
     }
     if (value) {
       _startIncomingCallListener(expertId);

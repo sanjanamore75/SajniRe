@@ -28,7 +28,7 @@ const messaging = admin.messaging();
  * This silently wakes the app's background isolate so flutter_callkit_incoming
  * can display the native call screen / ringtone even when the app is killed.
  */
-async function sendFcmDataMessage(fcmToken, data) {
+async function sendFcmMessage(fcmToken, data, notificationPayload = null) {
   const message = {
     token: fcmToken,
     data: data, // All string values
@@ -43,6 +43,10 @@ async function sendFcmDataMessage(fcmToken, data) {
       },
     },
   };
+
+  if (notificationPayload) {
+    message.notification = notificationPayload;
+  }
 
   try {
     const response = await messaging.send(message);
@@ -75,27 +79,35 @@ exports.onCallInitiated = functions.firestore
       return null;
     }
 
-    // ── Step 1: Fetch receiver (female expert) Firestore document ──────────
-    const expertDoc = await db.collection("experts").doc(receiverId).get();
+    // ── Step 1: Determine receiver's collection and fetch their doc ────────
+    let receiverDoc = await db.collection("experts").doc(receiverId).get();
+    let receiverData;
+    let isExpert = false;
 
-    if (!expertDoc.exists) {
-      functions.logger.warn(`Expert '${receiverId}' not found in Firestore.`);
-      return null;
+    if (receiverDoc.exists) {
+      receiverData = receiverDoc.data();
+      isExpert = true;
+    } else {
+      receiverDoc = await db.collection("users").doc(receiverId).get();
+      if (!receiverDoc.exists) {
+        functions.logger.warn(`Receiver '${receiverId}' not found in experts or users.`);
+        return null;
+      }
+      receiverData = receiverDoc.data();
     }
 
-    const expertData = expertDoc.data();
-    const gender   = expertData.gender   || "female"; // default female for experts
-    const isOnline = expertData.isOnline || false;
-    const fcmToken = expertData.fcmToken || null;
+    const gender   = receiverData.gender   || (isExpert ? "female" : "male");
+    const isOnline = receiverData.isOnline || false;
+    const fcmToken = receiverData.fcmToken || null;
 
     // ── Step 2: Business Logic Gate ────────────────────────────────────────
     //
     // CONDITION 1 (Female/Expert): If isOnline == false → DO NOT send notification.
-    // CONDITION 2 (Male/User):     Always send (handled in onMessageSent below).
+    // CONDITION 2 (Male/User):     Always send.
     //
     if (gender === "female" && isOnline === false) {
       functions.logger.info(
-        `Expert '${receiverId}' is offline. Suppressing call notification.`
+        `Receiver '${receiverId}' (female) is offline. Suppressing call notification.`
       );
       // Also update call status to 'rejected' so the caller gets feedback
       await snap.ref.update({ status: "rejected_offline" });
@@ -103,7 +115,7 @@ exports.onCallInitiated = functions.firestore
     }
 
     if (!fcmToken) {
-      functions.logger.warn(`Expert '${receiverId}' has no FCM token.`);
+      functions.logger.warn(`Receiver '${receiverId}' has no FCM token.`);
       return null;
     }
 
@@ -138,7 +150,8 @@ exports.onCallInitiated = functions.firestore
     };
 
     // ── Step 5: Send the FCM data message ──────────────────────────────────
-    await sendFcmDataMessage(fcmToken, fcmData);
+    // Note: No notification block because CallKit handles the ringing UI directly.
+    await sendFcmMessage(fcmToken, fcmData);
 
     functions.logger.info(
       `[onCallInitiated] Notification sent to expert '${receiverId}'.`
@@ -216,7 +229,11 @@ exports.onMessageSent = functions.firestore
     };
 
     // ── Step 4: Send notification ───────────────────────────────────────────
-    await sendFcmDataMessage(fcmToken, fcmData);
+    const notificationPayload = {
+      title: senderName,
+      body: messageText,
+    };
+    await sendFcmMessage(fcmToken, fcmData, notificationPayload);
 
     functions.logger.info(
       `[onMessageSent] Message notification sent to '${receiverId}'.`

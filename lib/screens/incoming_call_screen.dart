@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import '../providers/app_state.dart';
 import '../services/call_service.dart';
 import 'active_call_page.dart';
@@ -24,7 +25,8 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   final CallService _callService = CallService();
-  StreamSubscription<DocumentSnapshot>? _callSub;
+  StreamSubscription<DatabaseEvent>? _callSub;
+  bool _isDismissing = false;
 
   @override
   void initState() {
@@ -34,23 +36,28 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
       duration: const Duration(seconds: 2),
     )..repeat();
 
-    _callSub = FirebaseFirestore.instance
-        .collection('calls')
-        .doc(widget.callRoomId)
-        .snapshots()
-        .listen((snapshot) {
-      if (!snapshot.exists) {
+    _callSub = FirebaseDatabase.instanceFor(
+      app: FirebaseDatabase.instance.app,
+      databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    )
+        .ref('calls/${widget.callRoomId}')
+        .onValue
+        .listen((event) {
+      if (event.snapshot.value == null) {
         _handleCallEndedRemotely();
         return;
       }
-      final data = snapshot.data();
-      if (data != null && data['status'] == 'ended') {
+      final data = Map<String, dynamic>.from(event.snapshot.value as Map);
+      if (data['status'] == 'ended') {
         _handleCallEndedRemotely();
       }
     });
   }
 
   void _handleCallEndedRemotely() {
+    if (_isDismissing) return;
+    _isDismissing = true;
+    
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Missed Call: Caller disconnected')),
@@ -67,6 +74,9 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   }
 
   void _acceptCall() {
+    if (_isDismissing) return;
+    _isDismissing = true;
+    
     final expertId = context.read<AppState>().nickname.toLowerCase();
     
     Navigator.pushReplacement(
@@ -86,8 +96,13 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   }
 
   void _declineCall() {
+    if (_isDismissing) return;
+    _isDismissing = true;
+    
     _callService.endCall(widget.callRoomId);
-    Navigator.pop(context);
+    if (mounted) {
+      Navigator.pop(context);
+    }
   }
 
   @override

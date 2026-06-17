@@ -29,7 +29,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   if (type == 'call') {
     await _showCallkitIncoming(data);
   } else if (type == 'message') {
-    await _showLocalNotificationBackground(data);
+    // Handled natively by FCM notification payload in background/killed state.
   }
 }
 
@@ -86,34 +86,6 @@ Future<void> _showCallkitIncoming(Map<String, dynamic> data) async {
   );
 
   await FlutterCallkitIncoming.showCallkitIncoming(params);
-}
-
-// ─── LOCAL NOTIFICATION HELPER (background isolate) ───────────────────────
-
-Future<void> _showLocalNotificationBackground(
-    Map<String, dynamic> data) async {
-  final plugin = FlutterLocalNotificationsPlugin();
-
-  await plugin.initialize(
-    settings: const InitializationSettings(
-      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
-    ),
-  );
-
-  await plugin.show(
-    id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-    title: data['senderName'] ?? 'New Message',
-    body: data['body'] ?? '',
-    notificationDetails: const NotificationDetails(
-      android: AndroidNotificationDetails(
-        'messages_channel',
-        'Messages',
-        channelDescription: 'Chat message notifications',
-        importance: Importance.high,
-        priority: Priority.high,
-      ),
-    ),
-  );
 }
 
 // ─── NOTIFICATION SERVICE CLASS ───────────────────────────────────────────

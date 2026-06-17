@@ -46,6 +46,7 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
 
   bool _isMuted = false;
   bool _isSpeakerOn = false;
+  bool _isHangingUp = false;
 
   // Tier-based expert earning rate (resolved from Firestore on connect)
   double _expertEarningRate = 1.0; // default Bronze
@@ -281,6 +282,9 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
   }
 
   void _hangupLocal() {
+    if (_isHangingUp) return;
+    _isHangingUp = true;
+    
     if (mounted) {
       _timer?.cancel();
       
@@ -397,7 +401,9 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
                   CircleAvatar(
                     radius: 64,
                     backgroundImage: widget.avatarPath.isNotEmpty
-                        ? AssetImage(widget.avatarPath)
+                        ? (widget.avatarPath.startsWith('http')
+                            ? NetworkImage(widget.avatarPath)
+                            : AssetImage(widget.avatarPath) as ImageProvider)
                         : const AssetImage('assets/avatars/female_1.png'),
                     backgroundColor: Colors.white24,
                   ),

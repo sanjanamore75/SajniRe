@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 import '../models/female_expert.dart';
@@ -320,8 +321,8 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   Widget _buildHomeTab() {
     final appState = context.watch<AppState>();
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance.collection('experts').snapshots(),
+    return FutureBuilder<QuerySnapshot>(
+      future: FirebaseFirestore.instance.collection('experts').get(),
       builder: (context, snapshot) {
         List<FemaleExpert> liveExperts = [];
         if (snapshot.hasData) {
@@ -330,8 +331,8 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
               final data = doc.data() as Map<String, dynamic>;
               bool isOnline = data['isOnline'] ?? false;
               
-              // Hide offline experts from DB
-              if (!isOnline) continue;
+              // All experts are added. Their live status (green/red dot) is handled
+              // dynamically by the RTDB StreamBuilder in ExpertCardWidget.
 
               String nickname = data['nickname']?.toString() ?? '';
               if (nickname.trim().isEmpty) {
@@ -997,7 +998,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Avatar with online indicator
+                // Avatar with live online indicator (RTDB - Low Cost)
                 Stack(
                   children: [
                     CircleAvatar(
@@ -1005,20 +1006,47 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                       backgroundColor: accentColor.withOpacity(0.1),
                       backgroundImage: AssetImage(expert.avatarPath),
                     ),
-                    if (expert.isOnline)
-                      Positioned(
-                        bottom: 2,
-                        right: 2,
-                        child: Container(
-                          width: 11,
-                          height: 11,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF22C55E),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 2),
-                          ),
-                        ),
+                    Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: StreamBuilder<DatabaseEvent>(
+                        stream: FirebaseDatabase.instanceFor(
+                          app: FirebaseDatabase.instance.app,
+                          databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+                        ).ref('experts/${expert.nickname.toLowerCase()}/status').onValue,
+                        builder: (context, snapshot) {
+                          String status = 'Offline';
+                          Color statusColor = Colors.grey;
+
+                          if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
+                            status = snapshot.data!.snapshot.value.toString();
+                            if (status == 'Available' || status == 'Online') {
+                              statusColor = const Color(0xFF22C55E); // Green
+                            } else if (status == 'Busy' || status == 'Waiting' || status == 'In Call') {
+                              statusColor = const Color(0xFFEF4444); // Red
+                            } else {
+                              statusColor = Colors.grey; // Offline
+                            }
+                          } else if (expert.isOnline) {
+                            // Fallback to Firestore static data if RTDB is empty
+                            statusColor = const Color(0xFF22C55E);
+                          } else {
+                            // Offline
+                            return const SizedBox.shrink(); 
+                          }
+
+                          return Container(
+                            width: 11,
+                            height: 11,
+                            decoration: BoxDecoration(
+                              color: statusColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                          );
+                        },
                       ),
+                    ),
                   ],
                 ),
                 const SizedBox(width: 12),

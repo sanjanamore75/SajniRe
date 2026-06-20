@@ -53,7 +53,7 @@
         </activity>
 
         <!-- flutter_callkit_incoming: ConnectionService for native call handling -->
-        <service
+        <receiver
             android:name="com.hiennv.flutter_callkit_incoming.CallkitIncomingBroadcastReceiver"
             android:exported="true"/>
 

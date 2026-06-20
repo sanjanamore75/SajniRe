@@ -34,8 +34,8 @@ jobs:
       - name: Get Dependencies
         run: flutter pub get
 
-      - name: Build APK (Release)
-        run: flutter build apk --release
+      - name: Build APK (Release for Physical Devices)
+        run: flutter build apk --release --target-platform android-arm,android-arm64
 
       - name: Build App Bundle (Release)
         run: flutter build appbundle --release

@@ -31,6 +31,9 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Clean Workspace
+        run: flutter clean
+
       - name: Get Dependencies
         run: flutter pub get
 

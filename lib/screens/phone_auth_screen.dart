@@ -134,118 +134,15 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       final appState = context.read<AppState>();
       appState.setMobileNumber(phone);
 
-      try {
-        // 1. Check if user exists in 'users' collection (male caller)
-        final userDoc = await FirebaseFirestore.instance.collection('users').doc(phone).get();
-        if (userDoc.exists) {
-          final userData = userDoc.data()!;
-          final gender = userData['gender'] as String? ?? '';
-          final nickname = userData['nickname'] as String? ?? '';
-          final avatarPath = userData['avatarPath'] as String? ?? '';
-
-          if (gender == 'male' && nickname.isNotEmpty && avatarPath.isNotEmpty) {
-            // Already onboarded male caller
-            appState.setSelectedGender('Male');
-            appState.setNickname(nickname);
-            appState.setSelectedAvatar(avatarPath);
-            final balance = (userData['walletBalance'] as num?)?.toDouble() ?? 0.0;
-            final hasUsedFreeCall = userData['hasUsedFreeCall'] as bool? ?? false;
-            appState.setWalletBalance(balance);
-            appState.setHasUsedFreeCall(hasUsedFreeCall);
-
-            if (mounted) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const MaleCallerDashboard()),
-                (route) => false,
-              );
-            }
-            return;
-          }
-        }
-
-        // 2. Check if user exists in 'experts' collection (female expert)
-        final expertQuery = await FirebaseFirestore.instance
-            .collection('experts')
-            .where('mobileNumber', isEqualTo: phone)
-            .limit(1)
-            .get();
-
-        if (expertQuery.docs.isNotEmpty) {
-          final expertDoc = expertQuery.docs.first;
-          final expertData = expertDoc.data();
-          final nickname = expertData['nickname'] as String? ?? '';
-          final avatarPath = expertData['avatarPath'] as String? ?? '';
-          final lang = expertData['languages'] as String? ?? 'Hindi';
-
-          if (nickname.isNotEmpty) {
-            // Already onboarded female expert
-            appState.setSelectedGender('Female');
-            appState.setNickname(nickname);
-            if (avatarPath.isNotEmpty) {
-              appState.setSelectedAvatar(avatarPath);
-            }
-            appState.setPrimaryLanguage(lang);
-            appState.setAudioVerified(true);
-
-            if (mounted) {
-              Navigator.pushAndRemoveUntil(
-                context,
-                MaterialPageRoute(builder: (context) => const MainNavigation()),
-                (route) => false,
-              );
-            }
-            return;
-          }
-        }
-
-        // If referral code was valid, save referral entry in Firestore (only for new users)
-        if (_referralValid && _referredByCode != null) {
-          final code = _referredByCode!;
-          await FirebaseFirestore.instance.collection('referrals').add({
-            'referralCode': code,
-            'referredPhone': '+91$phone',
-            'referredName': phone,
-            'joinedAt': FieldValue.serverTimestamp(),
-            'status': 'joined',
-          });
-
-          // Check if expert has now reached 5 referrals → promote to Silver
-          final allReferrals = await FirebaseFirestore.instance
-              .collection('referrals')
-              .where('referralCode', isEqualTo: code)
-              .get();
-          if (allReferrals.docs.length >= 5) {
-            final expertSnap = await FirebaseFirestore.instance
-                .collection('experts')
-                .where('referralCode', isEqualTo: code)
-                .limit(1)
-                .get();
-            if (expertSnap.docs.isNotEmpty) {
-              await expertSnap.docs.first.reference.update({'tier': 'silver'});
-            }
-          }
-        }
-
-        // Proceed to onboarding flow starting with gender selection
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => const GenderSelectionScreen()),
-          );
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error: $e')),
-          );
-        }
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
+      // Bypassing Firebase auth check per user request
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const GenderSelectionScreen()),
+        );
+        setState(() {
+          _isLoading = false;
+        });
       }
     }
   }

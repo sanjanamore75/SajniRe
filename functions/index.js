@@ -63,7 +63,7 @@ async function sendFcmMessage(fcmToken, data, notificationPayload = null) {
 // Triggered when a new document is created in the `calls` collection.
 // ─────────────────────────────────────────────────────────────────────────────
 
-exports.onCallInitiated = functions.firestore
+exports.onCallInitiated = functions.region("asia-south1").firestore
   .document("calls/{callId}")
   .onCreate(async (snap, context) => {
     const callData = snap.data();
@@ -164,7 +164,7 @@ exports.onCallInitiated = functions.firestore
 // Triggered when a new message is written to `chats/{chatId}/messages/{msgId}`.
 // ─────────────────────────────────────────────────────────────────────────────
 
-exports.onMessageSent = functions.firestore
+exports.onMessageSent = functions.region("asia-south1").firestore
   .document("chats/{chatId}/messages/{messageId}")
   .onCreate(async (snap, context) => {
     const msgData  = snap.data();
@@ -246,7 +246,7 @@ exports.onMessageSent = functions.firestore
 // When an expert goes offline, cancel any pending call documents targeting them.
 // ─────────────────────────────────────────────────────────────────────────────
 
-exports.onExpertStatusChanged = functions.firestore
+exports.onExpertStatusChanged = functions.region("asia-south1").firestore
   .document("experts/{expertId}")
   .onUpdate(async (change, context) => {
     const before = change.before.data();

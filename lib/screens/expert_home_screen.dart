@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -61,7 +62,12 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
         parent: _cardSlideController, curve: Curves.easeOutCubic));
     _cardSlideController.forward();
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (FirebaseAuth.instance.currentUser == null) {
+        try {
+          await FirebaseAuth.instance.signInAnonymously();
+        } catch (_) {}
+      }
       _fetchExpertStats();
       final appState = context.read<AppState>();
       setState(() => _isAudioOn = appState.isOnline);
@@ -144,11 +150,10 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
               : 'assets/avatars/female_1.png',
           'languages': appState.primaryLanguage,
           'rating': 4.8,
-          'isOnline': value,
           'categories': ['All', 'Relationship', 'Star'],
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        debugPrint('[STATUS] Firestore updated experts/$expertId isOnline=$value');
+        debugPrint('[STATUS] Firestore updated experts/$expertId');
       } catch (e) {
         debugPrint('[STATUS] ERROR updating online status: $e');
       }
@@ -325,7 +330,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
       FirebaseFirestore.instance
           .collection('experts')
           .doc(expertId)
-          .update({'isOnline': false}).catchError((e) => null);
+          .set({'lastUpdated': FieldValue.serverTimestamp()}, SetOptions(merge: true)).catchError((e) => null);
     }
     _incomingCallSubscription?.cancel();
     appState.reset();

@@ -1,12 +1,13 @@
 import 'dart:async';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 class CallService {
   final FirebaseDatabase _database = FirebaseDatabase.instanceFor(
     app: FirebaseDatabase.instance.app,
-    databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
   );
 
   RTCPeerConnection? _peerConnection;
@@ -369,6 +370,158 @@ class CallService {
     if (_peerConnection != null) {
       await _peerConnection!.close();
       _peerConnection = null;
+    }
+  }
+
+  /// Realtime Database Transaction to safely lock an expert before calling.
+  /// Prevents race conditions if two users try to call simultaneously.
+  Future<bool> lockExpertForCall(String expertId) async {
+    try {
+      final DatabaseReference ref = _database.ref("status/${expertId.toLowerCase()}");
+      
+      final TransactionResult result = await ref.runTransaction((Object? post) {
+        if (post == null) {
+          // If node doesn't exist, we can't lock. Return abort.
+          return Transaction.abort();
+        }
+
+        Map<String, dynamic> data = Map<String, dynamic>.from(post as Map);
+        
+        // Read current status
+        String status = data['status']?.toString() ?? 'online';
+        bool isOnline = data['isOnline'] == true;
+        
+        // If expert is not online or already busy, abort
+        if (!isOnline || status == 'busy' || status == 'in-call') {
+          return Transaction.abort();
+        }
+        
+        // Expert is available, apply lock
+        data['status'] = 'busy';
+        data['lastChanged'] = ServerValue.timestamp;
+        
+        return Transaction.success(data);
+      });
+      
+      if (result.committed) {
+        // Remove from experts queue so they stop receiving calls
+        await _database.ref('experts_queue/${expertId.toLowerCase()}').remove();
+      }
+      
+      return result.committed;
+    } catch (e) {
+      debugPrint('Error locking expert $expertId: $e');
+      return false;
+    }
+  }
+
+  /// Realtime Database Transaction to safely lock a user before calling.
+  Future<bool> lockUserForCall(String userId) async {
+    try {
+      final DatabaseReference ref = _database.ref("status/$userId");
+      
+      final TransactionResult result = await ref.runTransaction((Object? post) {
+        if (post == null) {
+          return Transaction.success({
+            'isOnline': false,
+            'status': 'busy',
+            'lastChanged': ServerValue.timestamp,
+          });
+        }
+
+        Map<String, dynamic> data = Map<String, dynamic>.from(post as Map);
+        String status = data['status']?.toString() ?? 'online';
+        
+        if (status == 'busy' || status == 'in-call') {
+          return Transaction.abort();
+        }
+        
+        data['status'] = 'busy';
+        data['lastChanged'] = ServerValue.timestamp;
+        
+        return Transaction.success(data);
+      });
+      
+      return result.committed;
+    } catch (e) {
+      debugPrint('Error locking user $userId: $e');
+      return false;
+    }
+  }
+
+  /// Reverts an expert's status to online and re-adds them to the experts queue if they were online.
+  Future<void> unlockExpertFromCall(String expertId) async {
+    try {
+      final DatabaseReference ref = _database.ref("status/${expertId.toLowerCase()}");
+      
+      final snapshot = await ref.get();
+      if (snapshot.exists) {
+        final data = Map<String, dynamic>.from(snapshot.value as Map);
+        if (data['isOnline'] == true) {
+          // Revert to online
+          await ref.update({
+            'status': 'online',
+            'lastChanged': ServerValue.timestamp,
+          });
+          
+          // Verify if they are actually an expert before adding to queue
+          final expertDoc = await FirebaseFirestore.instance.collection('experts').doc(expertId.toLowerCase()).get();
+          if (expertDoc.exists) {
+            await _database.ref('experts_queue/${expertId.toLowerCase()}').set({
+              'expertId': expertId.toLowerCase(),
+              'status': 'waiting',
+              'timestamp': ServerValue.timestamp,
+            });
+          }
+        } else {
+          // They toggled offline during the call, just set status offline
+          await ref.update({
+            'status': 'offline',
+            'lastChanged': ServerValue.timestamp,
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error unlocking expert $expertId: $e');
+    }
+  }
+
+  /// Reverts a user's status to online.
+  Future<void> unlockUserFromCall(String userId) async {
+    // Both users and experts use the same status node now. We can safely just call unlockExpertFromCall
+    // because unlockExpertFromCall now checks Firestore before adding to the experts_queue!
+    await unlockExpertFromCall(userId);
+  }
+
+  /// Cloud Firestore Transaction to safely deduct wallet balance.
+  /// Validates sufficient balance and prevents concurrent deduction race conditions.
+  Future<void> deductWalletBalance({required String userId, required double callCost}) async {
+    final DocumentReference userRef = FirebaseFirestore.instance.collection('users').doc(userId);
+    
+    try {
+      await FirebaseFirestore.instance.runTransaction((transaction) async {
+        final snapshot = await transaction.get(userRef);
+        
+        if (!snapshot.exists) {
+          throw Exception("User document does not exist.");
+        }
+        
+        final data = snapshot.data() as Map<String, dynamic>?;
+        double currentBalance = (data?['walletBalance'] as num?)?.toDouble() ?? 0.0;
+        
+        if (currentBalance < callCost) {
+          throw Exception("Insufficient balance. Required: $callCost, Available: $currentBalance");
+        }
+        
+        // Safe deduction within transaction lock
+        double newBalance = currentBalance - callCost;
+        transaction.update(userRef, {'walletBalance': newBalance});
+      });
+      
+      debugPrint('Successfully deducted $callCost from user $userId. Transaction completed.');
+    } catch (e) {
+      debugPrint('Error deducting wallet balance for $userId: $e');
+      rethrow; // Rethrow so the caller knows the transaction failed and can terminate the call
     }
   }
 }

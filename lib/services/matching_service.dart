@@ -20,7 +20,7 @@ class MatchController {
 class MatchingService {
   final FirebaseDatabase _database = FirebaseDatabase.instanceFor(
     app: FirebaseDatabase.instance.app,
-    databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
   );
   final CallService _callService;
 
@@ -32,16 +32,34 @@ class MatchingService {
   Future<void> setExpertOnlineStatus(String expertId, bool isOnline) async {
     try {
       final docRef = _database.ref('experts_queue/$expertId');
+      final presenceRef = _database.ref('status/$expertId');
+      
       if (isOnline) {
         await docRef.set({
           'expertId': expertId,
           'status': 'waiting',
           'timestamp': ServerValue.timestamp,
         });
-        debugPrint('Expert $expertId added/updated in experts_queue.');
+        await docRef.onDisconnect().remove();
+        
+        await presenceRef.set({
+          'isOnline': true,
+          'lastChanged': ServerValue.timestamp,
+        });
+        await presenceRef.onDisconnect().update({
+          'isOnline': false,
+          'lastChanged': ServerValue.timestamp,
+        });
+        debugPrint('Expert $expertId added/updated in experts_queue & status.');
       } else {
         await docRef.remove();
-        debugPrint('Expert $expertId removed from experts_queue.');
+        await docRef.onDisconnect().cancel();
+        await presenceRef.set({
+          'isOnline': false,
+          'lastChanged': ServerValue.timestamp,
+        });
+        await presenceRef.onDisconnect().cancel();
+        debugPrint('Expert $expertId removed from experts_queue & status.');
       }
     } catch (e) {
       debugPrint('Error setting expert online status: $e');

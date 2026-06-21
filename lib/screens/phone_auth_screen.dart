@@ -4,11 +4,12 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../providers/app_state.dart';
 import '../theme/app_theme.dart';
-import 'gender_selection_screen.dart';
-import 'male_dashboard_screen.dart';
+import 'otp_verification_screen.dart';
 import 'main_navigation.dart';
+import 'gender_selection_screen.dart';
 
 class PhoneAuthScreen extends StatefulWidget {
   const PhoneAuthScreen({super.key});
@@ -29,6 +30,8 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   bool _isLoading = false;
   String? _referralError;
   String? _referredByCode;
+
+  static const platform = MethodChannel('com.sajnire.app/auth');
 
   final List<Map<String, dynamic>> _bannerSlides = [
     {
@@ -52,6 +55,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   void initState() {
     super.initState();
     _startBannerAutoPlay();
+    // Native phone hint removed for anonymous bypass
   }
 
   void _startBannerAutoPlay() {
@@ -134,15 +138,45 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       final appState = context.read<AppState>();
       appState.setMobileNumber(phone);
 
-      // Bypassing Firebase auth check per user request
-      if (mounted) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const GenderSelectionScreen()),
-        );
-        setState(() {
-          _isLoading = false;
-        });
+      // DEVELOPMENT BYPASS: Authenticate anonymously to satisfy Firestore rules,
+      // then skip OTP and go directly to next screen
+      try {
+        await FirebaseAuth.instance.signInAnonymously();
+        
+        final userDoc = await FirebaseFirestore.instance.collection('users').doc(phone).get();
+        if (userDoc.exists) {
+          final data = userDoc.data() as Map<String, dynamic>? ?? {};
+          final gender = (data['gender'] ?? 'male').toString();
+          appState.setSelectedGender(gender == 'male' ? 'Male' : 'Female');
+          appState.setNickname((data['nickname'] ?? '').toString());
+          appState.setSelectedAvatar((data['avatarPath'] ?? '').toString());
+          
+          if (mounted) {
+            setState(() => _isLoading = false);
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const MainNavigation()),
+              (route) => false,
+            );
+          }
+        } else {
+          if (mounted) {
+            setState(() => _isLoading = false);
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const GenderSelectionScreen()),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to bypass login: $e')),
+          );
+        }
       }
     }
   }
@@ -468,7 +502,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
                                 ),
                               ),
                             const SizedBox(height: 20),
-                             // Get OTP Button
+                             // Get OTP Button (Now acts as bypass)
                              ElevatedButton(
                                onPressed: _isLoading ? null : _onGetOtpPressed,
                                child: _isLoading

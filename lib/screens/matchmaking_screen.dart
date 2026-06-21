@@ -75,7 +75,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
         final expertId = widget.requestedExpert!.nickname.toLowerCase();
         final docSnap = await FirebaseDatabase.instanceFor(
             app: FirebaseDatabase.instance.app,
-            databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+            databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
           ).ref('experts_queue/$expertId')
             .get();
 

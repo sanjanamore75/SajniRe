@@ -5,7 +5,7 @@ import 'providers/app_state.dart';
 import 'theme/app_theme.dart';
 import 'screens/main_navigation.dart';
 import 'screens/active_call_page.dart';
-import 'screens/phone_auth_screen.dart';
+import 'screens/auth_wrapper.dart';
 import 'services/notification_service.dart';
 
 /// Global navigator key — used by NotificationService to navigate
@@ -52,7 +52,7 @@ class SajniReApp extends StatelessWidget {
       // push routes after accepting a call from a terminated state.
       navigatorKey: navigatorKey,
 
-      home: const PhoneAuthScreen(),
+      home: const AuthWrapper(),
 
       // Named routes used by NotificationService._listenCallKitEvents()
       routes: {

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 import '../models/female_expert.dart';
@@ -9,6 +11,7 @@ import 'phone_auth_screen.dart';
 import 'active_call_page.dart';
 import 'wallet_recharge_screen.dart';
 import 'matchmaking_screen.dart';
+import 'incoming_call_screen.dart';
 import '../services/call_service.dart';
 import '../services/notification_service.dart';
 
@@ -43,12 +46,170 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   static const Color brandTextGrey = Color(0xFF64748B); // Slate 500
   static const Color brandCardBg = Colors.white;
 
+  // Pagination State
+  final int _expertsLimit = 40;
+  List<FemaleExpert> _liveExperts = [];
+  DocumentSnapshot? _lastExpertDoc;
+  bool _isFetchingExperts = false;
+  bool _hasMoreExperts = true;
+  final ScrollController _scrollController = ScrollController();
+  
+  StreamSubscription? _incomingCallSubscription;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    _scrollController.addListener(_onScroll);
+    _fetchExperts();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      // Ensure we have a valid Firebase Auth session (anonymous) so Firestore
+      // rules (request.auth != null) are satisfied before any reads.
+      if (FirebaseAuth.instance.currentUser == null) {
+        try {
+          await FirebaseAuth.instance.signInAnonymously();
+          debugPrint('[MALE_DASH] signInAnonymously success uid=${FirebaseAuth.instance.currentUser?.uid}');
+        } catch (e) {
+          debugPrint('[MALE_DASH] signInAnonymously error: $e');
+        }
+      } else {
+        debugPrint('[MALE_DASH] already signed in uid=${FirebaseAuth.instance.currentUser?.uid}');
+      }
+      
+      // DEBUG: Force insert an online expert
+      try {
+        await FirebaseFirestore.instance.collection('experts').doc('test_expert').set({
+          'nickname': 'Test Expert',
+          'isOnline': true,
+          'categories': ['All'],
+          'city': 'Test City',
+          'pricePerMin': 5,
+        });
+        debugPrint('[MALE_DASH] Inserted test expert!');
+      } catch (e) {
+        debugPrint('[MALE_DASH] Failed to insert test expert: $e');
+      }
+
+      _setupMalePresenceAndCallListener();
       _fetchInitialWalletBalance();
     });
+  }
+
+  void _setupMalePresenceAndCallListener() {
+    final appState = context.read<AppState>();
+    final mobile = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+    
+    // Setup RTDB Presence
+    final presenceRef = FirebaseDatabase.instanceFor(
+      app: FirebaseDatabase.instance.app,
+      databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
+    ).ref('status/$mobile');
+    
+    presenceRef.set({
+      'isOnline': true,
+      'status': 'online',
+      'lastChanged': ServerValue.timestamp,
+    });
+    presenceRef.onDisconnect().update({
+      'isOnline': false,
+      'status': 'offline',
+      'lastChanged': ServerValue.timestamp,
+    });
+
+    // Listen for incoming calls
+    _incomingCallSubscription = CallService().listenForIncomingCalls(
+      expertId: mobile, // Male user receives the call
+      onCallReceived: (roomId, callerId) {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => IncomingCallScreen(
+              callRoomId: roomId,
+              callerId: callerId,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _incomingCallSubscription?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      _fetchExperts();
+    }
+  }
+
+  Future<void> _fetchExperts() async {
+    if (_isFetchingExperts || !_hasMoreExperts) return;
+    
+    setState(() {
+      _isFetchingExperts = true;
+    });
+
+    try {
+      var query = FirebaseFirestore.instance.collection('experts').limit(_expertsLimit);
+      
+      if (_lastExpertDoc != null) {
+        query = query.startAfterDocument(_lastExpertDoc!);
+      }
+
+      final snapshot = await query.get();
+
+      if (snapshot.docs.length < _expertsLimit) {
+        _hasMoreExperts = false;
+      }
+
+      List<FemaleExpert> newExperts = [];
+      for (var doc in snapshot.docs) {
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+          String nickname = data['nickname']?.toString() ?? '';
+          if (nickname.trim().isEmpty) nickname = doc.id;
+
+          newExperts.add(
+            FemaleExpert(
+              nickname: nickname,
+              age: (data['age'] as num?)?.toInt() ?? 20,
+              city: data['city'] ?? 'Online',
+              pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
+              bio: data['bio'] ?? '',
+              avatarPath: data['avatarPath'] ?? 'assets/avatars/female_1.png',
+              languages: data['languages']?.toString() ?? 'Hindi',
+              rating: (() {
+                final totalSecs = (data['totalTalkSeconds'] as num?)?.toDouble() ?? 0;
+                final computed = 3.5 + (totalSecs / 36000.0) * 1.5;
+                final stored = (data['rating'] as num?)?.toDouble();
+                return double.parse((stored ?? computed.clamp(3.5, 5.0)).toStringAsFixed(1));
+              })(),
+              isOnline: false,
+              categories: List<String>.from((data['categories'] as List<dynamic>?) ?? ['All']),
+            ),
+          );
+        } catch (e) {
+          debugPrint('Error parsing expert doc: $e');
+        }
+      }
+
+      if (snapshot.docs.isNotEmpty) {
+        _lastExpertDoc = snapshot.docs.last;
+        _liveExperts.addAll(newExperts);
+      }
+    } catch (e) {
+      debugPrint('Error fetching experts: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isFetchingExperts = false;
+        });
+      }
+    }
   }
 
   Future<void> _fetchInitialWalletBalance() async {
@@ -321,86 +482,39 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   Widget _buildHomeTab() {
     final appState = context.watch<AppState>();
 
-    return FutureBuilder<QuerySnapshot>(
-      future: FirebaseFirestore.instance.collection('experts').get(),
-      builder: (context, snapshot) {
-        List<FemaleExpert> liveExperts = [];
-        if (snapshot.hasData) {
-          for (var doc in snapshot.data!.docs) {
-            try {
-              final data = doc.data() as Map<String, dynamic>;
-              bool isOnline = data['isOnline'] ?? false;
-              
-              // All experts are added. Their live status (green/red dot) is handled
-              // dynamically by the RTDB StreamBuilder in ExpertCardWidget.
+    // Generate Dummy Experts for UI Display
+    List<FemaleExpert> dummyExperts = [
+      FemaleExpert(nickname: 'Sneha', age: 22, city: 'Mumbai', pricePerMin: 5, bio: 'Love chatting about life', avatarPath: 'assets/avatars/female_1.png', languages: 'Hindi, English', rating: 4.8, isOnline: true, categories: ['All', 'Relationship']),
+      FemaleExpert(nickname: 'Priya', age: 24, city: 'Delhi', pricePerMin: 5, bio: 'Friendly advisor here for you', avatarPath: 'assets/avatars/female_2.png', languages: 'Hindi', rating: 4.9, isOnline: true, categories: ['All', 'Marriage']),
+      FemaleExpert(nickname: 'Riya', age: 21, city: 'Pune', pricePerMin: 5, bio: 'Let\'s be good friends!', avatarPath: 'assets/avatars/female_3.png', languages: 'Hindi', rating: 4.7, isOnline: true, categories: ['All', 'Star']),
+      FemaleExpert(nickname: 'Kavya', age: 25, city: 'Bangalore', pricePerMin: 5, bio: 'Relationship expert and listener', avatarPath: 'assets/avatars/female_4.png', languages: 'Hindi, English', rating: 4.9, isOnline: true, categories: ['All', 'Confidence']),
+      FemaleExpert(nickname: 'Ananya', age: 23, city: 'Kolkata', pricePerMin: 5, bio: 'Always here to listen to you', avatarPath: 'assets/avatars/female_5.png', languages: 'Hindi, Bengali', rating: 4.6, isOnline: true, categories: ['All', 'Relationship']),
+      FemaleExpert(nickname: 'Meera', age: 26, city: 'Jaipur', pricePerMin: 5, bio: 'Life coach and confident speaker', avatarPath: 'assets/avatars/female_6.png', languages: 'Hindi', rating: 4.8, isOnline: true, categories: ['All', 'Marriage']),
+    ];
 
-              String nickname = data['nickname']?.toString() ?? '';
-              if (nickname.trim().isEmpty) {
-                nickname = doc.id;
-              }
+    // Combine DB online experts with dummy experts
+    final allAvailableExperts = [..._liveExperts, ...dummyExperts];
 
-              liveExperts.add(
-                FemaleExpert(
-                  nickname: nickname,
-                  age: (data['age'] as num?)?.toInt() ?? 20,
-                  city: data['city'] ?? 'Online',
-                  pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
-                  bio: data['bio'] ?? '',
-                  avatarPath:
-                      data['avatarPath'] ?? 'assets/avatars/female_1.png',
-                  languages: data['languages']?.toString() ?? 'Hindi',
-                  rating: (() {
-                    final totalSecs = (data['totalTalkSeconds'] as num?)?.toDouble() ?? 0;
-                    // 0s → 3.5, 36000s (10hrs) → 5.0, always clamped to [3.5, 5.0]
-                    final computed = 3.5 + (totalSecs / 36000.0) * 1.5;
-                    final stored = (data['rating'] as num?)?.toDouble();
-                    return double.parse((stored ?? computed.clamp(3.5, 5.0)).toStringAsFixed(1));
-                  })(),
-                  isOnline: isOnline,
-                  categories: List<String>.from((data['categories'] as List<dynamic>?) ?? ['All']),
-                ),
-              );
-            } catch (e) {
-              debugPrint('Error parsing expert doc: $e');
-              // To make debugging easier, add a dummy expert with the error message
-              liveExperts.add(FemaleExpert(
-                nickname: 'Error: ${e.toString().split('\n').first}',
-                age: 0,
-                city: 'Error',
-                pricePerMin: 0,
-                bio: 'Error parsing doc ${doc.id}',
-                avatarPath: 'assets/avatars/female_1.png',
-                languages: 'None',
-                rating: 0.0,
-                isOnline: true,
-                categories: ['All'],
-              ));
-            }
-          }
-        }
+    final expertsList = allAvailableExperts.where((expert) {
+      if (expert.nickname.trim().isEmpty) return false;
+      if (_selectedCategory == 'All') return true;
+      return expert.categories.contains(_selectedCategory);
+    }).toList();
 
-        // Generate Dummy Experts for UI Display
-        List<FemaleExpert> dummyExperts = [
-          FemaleExpert(nickname: 'Sneha', age: 22, city: 'Mumbai', pricePerMin: 5, bio: 'Love chatting about life', avatarPath: 'assets/avatars/female_1.png', languages: 'Hindi, English', rating: 4.8, isOnline: true, categories: ['All', 'Relationship']),
-          FemaleExpert(nickname: 'Priya', age: 24, city: 'Delhi', pricePerMin: 5, bio: 'Friendly advisor here for you', avatarPath: 'assets/avatars/female_2.png', languages: 'Hindi', rating: 4.9, isOnline: true, categories: ['All', 'Marriage']),
-          FemaleExpert(nickname: 'Riya', age: 21, city: 'Pune', pricePerMin: 5, bio: 'Let\'s be good friends!', avatarPath: 'assets/avatars/female_3.png', languages: 'Hindi', rating: 4.7, isOnline: true, categories: ['All', 'Star']),
-          FemaleExpert(nickname: 'Kavya', age: 25, city: 'Bangalore', pricePerMin: 5, bio: 'Relationship expert and listener', avatarPath: 'assets/avatars/female_4.png', languages: 'Hindi, English', rating: 4.9, isOnline: true, categories: ['All', 'Confidence']),
-          FemaleExpert(nickname: 'Ananya', age: 23, city: 'Kolkata', pricePerMin: 5, bio: 'Always here to listen to you', avatarPath: 'assets/avatars/female_5.png', languages: 'Hindi, Bengali', rating: 4.6, isOnline: true, categories: ['All', 'Relationship']),
-          FemaleExpert(nickname: 'Meera', age: 26, city: 'Jaipur', pricePerMin: 5, bio: 'Life coach and confident speaker', avatarPath: 'assets/avatars/female_6.png', languages: 'Hindi', rating: 4.8, isOnline: true, categories: ['All', 'Marriage']),
-        ];
-
-        // Combine DB online experts with dummy experts
-        final allAvailableExperts = [...liveExperts, ...dummyExperts];
-
-        final expertsList = allAvailableExperts.where((expert) {
-          if (expert.nickname.trim().isEmpty) return false;
-          if (_selectedCategory == 'All') return true;
-          return expert.categories.contains(_selectedCategory);
-        }).toList();
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+            // --- RAW FIREBASE DATA DEBUG ---
+            Container(
+              color: Colors.red.shade900,
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                'DEBUG: Loaded Experts=${_liveExperts.length}\n' +
+                (_liveExperts.take(3).map((e) => '${e.nickname}').join('\n') + (_liveExperts.length > 3 ? '\n...' : '')),
+                style: const TextStyle(color: Colors.white, fontSize: 12),
+              ),
+            ),
+            // -------------------------------
             // Redesigned Top Custom Header Row
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -668,23 +782,28 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
             // Redesigned Experts List view
             Expanded(
-              child: expertsList.isEmpty
-                  ? const Center(
-                      child: Text('No experts available in this category'),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: expertsList.length,
-                      itemBuilder: (context, index) {
-                        final expert = expertsList[index];
-                        return _buildExpertItemRedesigned(expert);
-                      },
-                    ),
+              child: expertsList.isEmpty && _isFetchingExperts
+                  ? const Center(child: CircularProgressIndicator())
+                  : expertsList.isEmpty
+                      ? const Center(child: Text('No experts available in this category'))
+                      : ListView.builder(
+                          controller: _scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: expertsList.length + (_hasMoreExperts ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index == expertsList.length) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 16.0),
+                                child: Center(child: CircularProgressIndicator()),
+                              );
+                            }
+                            final expert = expertsList[index];
+                            return _buildExpertItemRedesigned(expert);
+                          },
+                        ),
             ),
           ],
         );
-      },
-    );
   }
 
   void _triggerCallByNickname(String nickname) async {
@@ -692,6 +811,21 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
       final doc = await FirebaseFirestore.instance.collection('experts').doc(nickname.toLowerCase()).get();
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
+        
+        bool isOnline = false;
+        try {
+          final rtdb = FirebaseDatabase.instanceFor(
+            app: FirebaseDatabase.instance.app,
+            databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
+          );
+          final event = await rtdb.ref('status/${nickname.toLowerCase()}/isOnline').once();
+          if (event.snapshot.value != null) {
+            isOnline = event.snapshot.value == true;
+          }
+        } catch (e) {
+          debugPrint('Error fetching RTDB status: $e');
+        }
+
         final expert = FemaleExpert(
           nickname: data['nickname'] ?? nickname,
           age: (data['age'] as num?)?.toInt() ?? 20,
@@ -701,7 +835,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
           avatarPath: data['avatarPath'] ?? 'assets/avatars/female_1.png',
           languages: data['languages'] ?? 'Hindi',
           rating: (data['rating'] ?? 4.5).toDouble(),
-          isOnline: data['isOnline'] ?? false,
+          isOnline: isOnline,
           categories: List<String>.from(data['categories'] ?? ['All']),
         );
         _triggerCall(expert);
@@ -1012,18 +1146,15 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                       child: StreamBuilder<DatabaseEvent>(
                         stream: FirebaseDatabase.instanceFor(
                           app: FirebaseDatabase.instance.app,
-                          databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
-                        ).ref('experts/${expert.nickname.toLowerCase()}/status').onValue,
+                          databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
+                        ).ref('status/${expert.nickname.toLowerCase()}/isOnline').onValue,
                         builder: (context, snapshot) {
-                          String status = 'Offline';
                           Color statusColor = Colors.grey;
 
                           if (snapshot.hasData && snapshot.data!.snapshot.value != null) {
-                            status = snapshot.data!.snapshot.value.toString();
-                            if (status == 'Available' || status == 'Online') {
+                            bool isOnline = snapshot.data!.snapshot.value == true;
+                            if (isOnline) {
                               statusColor = const Color(0xFF22C55E); // Green
-                            } else if (status == 'Busy' || status == 'Waiting' || status == 'In Call') {
-                              statusColor = const Color(0xFFEF4444); // Red
                             } else {
                               statusColor = Colors.grey; // Offline
                             }

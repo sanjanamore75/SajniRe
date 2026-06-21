@@ -38,7 +38,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
 
     _callSub = FirebaseDatabase.instanceFor(
       app: FirebaseDatabase.instance.app,
-      databaseURL: 'https://eluelu-88a6c-default-rtdb.asia-southeast1.firebasedatabase.app',
+      databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
     )
         .ref('calls/${widget.callRoomId}')
         .onValue
@@ -77,14 +77,17 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     if (_isDismissing) return;
     _isDismissing = true;
     
-    final expertId = context.read<AppState>().nickname.toLowerCase();
+    final appState = context.read<AppState>();
+    final currentUserId = appState.mobileNumber.isNotEmpty 
+        ? appState.mobileNumber 
+        : appState.nickname.toLowerCase();
     
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (_) => ActiveCallPage(
           callRoomId: widget.callRoomId,
-          receiverId: expertId,
+          receiverId: currentUserId,
           callerId: widget.callerId,
           nickname: widget.callerId,
           avatarPath: '', // Usually empty for male callers

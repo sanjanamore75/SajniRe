@@ -285,6 +285,10 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
     if (_isHangingUp) return;
     _isHangingUp = true;
     
+    // Unlock both parties safely (unlockUserFromCall checks experts collection internally)
+    _callService.unlockUserFromCall(widget.callerId);
+    _callService.unlockUserFromCall(widget.receiverId);
+    
     if (mounted) {
       _timer?.cancel();
       

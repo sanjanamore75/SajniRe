@@ -3,6 +3,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_colors.dart';
 import '../providers/app_state.dart';
+import '../services/call_service.dart';
+import 'active_call_page.dart';
 
 class RecentSessionsScreen extends StatefulWidget {
   const RecentSessionsScreen({super.key});
@@ -202,6 +204,8 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                             cost: isMissed ? '₹0' : 'Ended',
                             avatarUrl: avatarPath,
                             isMissed: isMissed,
+                            otherUserId: otherUserId ?? '',
+                            isCaller: isCaller,
                           );
                         },
                       );
@@ -211,6 +215,76 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+  
+  void _triggerCall(BuildContext context, String targetId, bool isTargetExpert) async {
+    final callService = CallService();
+    
+    // Show loading
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+
+    bool targetLocked = false;
+    bool selfLocked = false;
+
+    // Lock target
+    if (isTargetExpert) {
+      targetLocked = await callService.lockExpertForCall(targetId);
+    } else {
+      targetLocked = await callService.lockUserForCall(targetId);
+    }
+    
+    final appState = context.read<AppState>();
+    final currentUser = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : appState.nickname.toLowerCase();
+    
+    // Lock self
+    if (targetLocked) {
+      if (isTargetExpert) {
+        selfLocked = await callService.lockUserForCall(currentUser);
+      } else {
+        selfLocked = await callService.lockExpertForCall(currentUser);
+      }
+    }
+
+    if (context.mounted) Navigator.pop(context); // remove loading
+
+    if (!targetLocked) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User is busy try after sometime')));
+      }
+      return;
+    }
+    
+    if (!selfLocked) {
+      // Unlock target because we couldn't lock ourselves
+      if (isTargetExpert) {
+        callService.unlockExpertFromCall(targetId);
+      } else {
+        callService.unlockUserFromCall(targetId);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('You have an incoming call or are currently busy.')));
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    
+    final displayName = appState.nickname;
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActiveCallPage(
+          receiverId: isTargetExpert ? targetId : targetId,
+          callerId: currentUser,
+          nickname: displayName,
+          avatarPath: 'assets/avatars/female_1.png',
+          isCaller: true, // We are initiating the call
+          pricePerMin: 5.0,
+          isFirstFreeCall: false,
         ),
       ),
     );
@@ -272,6 +346,8 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
     required String cost,
     required String avatarUrl,
     required bool isMissed,
+    required String otherUserId,
+    required bool isCaller,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -371,14 +447,17 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
           // Actions
           Column(
             children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryBlue,
-                  borderRadius: BorderRadius.circular(16),
+              GestureDetector(
+                onTap: () => _triggerCall(context, otherUserId ?? '', !isCaller),
+                child: Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryBlue,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(Icons.phone, color: Colors.white),
                 ),
-                child: const Icon(Icons.phone, color: Colors.white),
               ),
               const SizedBox(height: 8),
               Container(

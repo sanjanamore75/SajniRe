@@ -88,6 +88,7 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
           'rating': 4.8,
           'isOnline': false, // Offline by default when onboarded
           'categories': ['All', 'Relationship', 'Star'],
+          'createdAt': FieldValue.serverTimestamp(),
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       } catch (e) {

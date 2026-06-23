@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../theme/app_colors.dart';
 import '../providers/app_state.dart';
-import '../services/chat_service.dart';
+import '../services/local_chat_database.dart';
+import 'hybrid_chat_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -14,11 +15,61 @@ class ChatListScreen extends StatefulWidget {
 
 class _ChatListScreenState extends State<ChatListScreen> {
   int _selectedTab = 0; // 0 for FRIENDS, 1 for GENERAL
-  final ChatService _chatService = ChatService();
+  late String _currentUserMobile;
+
+  @override
+  void initState() {
+    super.initState();
+    // We defer getting the current user mobile to build() using Provider, 
+    // but we can initialize data fetching here if needed.
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchEnrichedChats(String myUid) async {
+    final chatDocs = await LocalChatDatabase.instance.getRecentChats(myUid);
+    final enrichedDocs = <Map<String, dynamic>>[];
+
+    for (var doc in chatDocs) {
+      final data = Map<String, dynamic>.from(doc);
+      final otherUser = data['otherUserId'] as String;
+      
+      String displayName = otherUser;
+      if (RegExp(r'^\+?[0-9]{10,15}$').hasMatch(otherUser)) {
+        try {
+          final userDoc = await FirebaseFirestore.instance.collection('users').doc(otherUser).get();
+          if (userDoc.exists && userDoc.data() != null) {
+            final userData = userDoc.data()!;
+            if (userData['nickname'] != null && userData['nickname'].toString().isNotEmpty) {
+              displayName = userData['nickname'].toString();
+            } else {
+              displayName = 'User ' + otherUser.substring(otherUser.length - 4);
+            }
+          } else {
+            displayName = 'User ' + otherUser.substring(otherUser.length - 4);
+          }
+        } catch (e) {
+          displayName = 'User ' + otherUser.substring(otherUser.length - 4);
+        }
+      }
+      
+      data['displayName'] = displayName;
+      enrichedDocs.add(data);
+    }
+    
+    return enrichedDocs;
+  }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserMobile = context.watch<AppState>().mobileNumber;
+    final appState = context.watch<AppState>();
+    _currentUserMobile = appState.mobileNumber;
+    if (_currentUserMobile.isEmpty) _currentUserMobile = "test_mobile";
+
+    // Dynamic ID logic: Females use nickname.toLowerCase(), Males use mobileNumber
+    String myUid = appState.selectedGender == 'Female' 
+        ? appState.nickname.toLowerCase() 
+        : _currentUserMobile;
+        
+    if (myUid.isEmpty) myUid = _currentUserMobile;
 
     return Scaffold(
       backgroundColor: AppColors.bgLight,
@@ -41,63 +92,71 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ),
             ),
 
-            // List View connected to Firestore
+            // List View connected to Local SQLite
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _chatService.getUserChats(currentUserMobile),
+              child: StreamBuilder<void>(
+                // Listen to local DB updates so inbox refreshes automatically
+                stream: LocalChatDatabase.instance.updates,
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snapshot.hasError) {
-                    return Center(child: Text('Error loading chats: ${snapshot.error}'));
-                  }
-
-                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-                    return _buildEmptyState();
-                  }
-
-                  final chatDocs = snapshot.data!.docs.toList();
-                  chatDocs.sort((a, b) {
-                    final aData = a.data() as Map<String, dynamic>;
-                    final bData = b.data() as Map<String, dynamic>;
-                    final aTime = aData['lastUpdated'] as Timestamp?;
-                    final bTime = bData['lastUpdated'] as Timestamp?;
-                    if (aTime == null && bTime == null) return 0;
-                    if (aTime == null) return 1;
-                    if (bTime == null) return -1;
-                    return bTime.compareTo(aTime);
-                  });
-
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(20),
-                    itemCount: chatDocs.length,
-                    itemBuilder: (context, index) {
-                      final doc = chatDocs[index];
-                      final data = doc.data() as Map<String, dynamic>;
-                      
-                      final participants = List<String>.from(data['participants'] ?? []);
-                      final otherUser = participants.firstWhere(
-                        (p) => p != currentUserMobile, 
-                        orElse: () => 'Unknown',
-                      );
-
-                      final avatarUrl = 'https://i.pravatar.cc/150?u=$otherUser';
-                      
-                      String dayText = 'Just now';
-                      if (data['lastUpdated'] != null) {
-                         final dt = (data['lastUpdated'] as Timestamp).toDate();
-                         dayText = '${dt.day}/${dt.month}';
+                  return FutureBuilder<List<Map<String, dynamic>>>(
+                    future: _fetchEnrichedChats(myUid),
+                    builder: (context, futureSnapshot) {
+                      if (futureSnapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
                       }
 
-                      return _buildChatCard(
-                        name: otherUser,
-                        lastMessage: data['lastMessage'] ?? 'New Chat',
-                        dayText: dayText,
-                        avatarUrl: avatarUrl,
-                        isPinned: false, 
-                        isMuted: false,
+                      if (futureSnapshot.hasError) {
+                        return Center(child: Text('Error loading chats: ${futureSnapshot.error}'));
+                      }
+
+                      final chatDocs = futureSnapshot.data ?? [];
+                      if (chatDocs.isEmpty) {
+                        return _buildEmptyState();
+                      }
+
+                      return ListView.builder(
+                        padding: const EdgeInsets.all(20),
+                        itemCount: chatDocs.length,
+                        itemBuilder: (context, index) {
+                          final data = chatDocs[index];
+                          final otherUser = data['otherUserId'] as String;
+                          final lastMessage = data['lastMessage'] as String;
+                          final timestamp = data['timestamp'] as int;
+                          final unreadCount = data['unreadCount'] as int;
+                          final displayName = data['displayName'] as String;
+
+                          final avatarUrl = 'https://ui-avatars.com/api/?name=$displayName&background=random';
+                          
+                          final dt = DateTime.fromMillisecondsSinceEpoch(timestamp);
+                          final now = DateTime.now();
+                          String dayText;
+                          if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
+                            dayText = TimeOfDay.fromDateTime(dt).format(context);
+                          } else {
+                            dayText = '${dt.day}/${dt.month}';
+                          }
+
+                          return _buildChatCard(
+                            name: displayName,
+                            lastMessage: lastMessage,
+                            dayText: dayText,
+                            avatarUrl: avatarUrl,
+                            unreadCount: unreadCount,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => HybridChatScreen(
+                                    myUid: myUid,
+                                    otherUid: otherUser,
+                                    otherUserName: displayName,
+                                    otherUserAvatar: avatarUrl,
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
                       );
                     },
                   );
@@ -163,132 +222,116 @@ class _ChatListScreenState extends State<ChatListScreen> {
     required String lastMessage,
     required String dayText,
     required String avatarUrl,
-    required bool isPinned,
-    required bool isMuted,
+    required int unreadCount,
+    required VoidCallback onTap,
   }) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.cardWhite,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            spreadRadius: 1,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Top Row: Avatar, Name, Message, Icons, Time
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundImage: NetworkImage(avatarUrl),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      lastMessage,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        color: AppColors.textGrey,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
+    final colors = [
+      const Color(0xFFE91E63), // Pink
+      const Color(0xFF9C27B0), // Purple
+      const Color(0xFF3F51B5), // Indigo
+      const Color(0xFF009688), // Teal
+      const Color(0xFFFF9800), // Orange
+      const Color(0xFF795548), // Brown
+      const Color(0xFF607D8B), // Blue Grey
+    ];
+    final color = colors[name.hashCode.abs() % colors.length];
+    
+    String initials = name.length >= 2 ? name.substring(0, 2).toUpperCase() : name.toUpperCase();
+    if (name.startsWith('User ') && name.length > 5) {
+      initials = 'U' + name.substring(name.length - 1);
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.cardWhite,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              spreadRadius: 1,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: color,
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      if (isPinned)
-                        const Icon(Icons.push_pin, size: 18, color: AppColors.textGrey),
-                      if (isPinned) const SizedBox(width: 8),
-                      if (isMuted)
-                        const Icon(Icons.notifications_off, size: 18, color: AppColors.textGrey),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
                   Text(
-                    dayText,
+                    name,
                     style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textGrey,
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
                     ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    lastMessage,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: unreadCount > 0 ? AppColors.textDark : AppColors.textGrey,
+                      fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Bottom Row: Action Buttons
-          Row(
-            children: [
-              Expanded(
-                child: InkWell(
-                  onTap: () {},
-                  child: Container(
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.gradientBlueStart, AppColors.gradientBlueEnd],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      borderRadius: BorderRadius.circular(30),
-                    ),
-                    child: const Center(
-                      child: Icon(Icons.phone, color: Colors.white, size: 20),
-                    ),
+            ),
+            const SizedBox(width: 8),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  dayText,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: unreadCount > 0 ? AppColors.primaryBlue : AppColors.textGrey,
+                    fontWeight: unreadCount > 0 ? FontWeight.bold : FontWeight.normal,
                   ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: InkWell(
-                  onTap: () {},
-                  child: Container(
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [AppColors.gradientLightBlueStart, AppColors.gradientLightBlueEnd],
-                        begin: Alignment.centerLeft,
-                        end: Alignment.centerRight,
-                      ),
-                      borderRadius: BorderRadius.circular(30),
+                const SizedBox(height: 8),
+                if (unreadCount > 0)
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(
+                      color: AppColors.primaryBlue,
+                      shape: BoxShape.circle,
                     ),
-                    child: const Center(
-                      child: Icon(Icons.chat_bubble_outline, color: Colors.white, size: 20),
+                    child: Text(
+                      unreadCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

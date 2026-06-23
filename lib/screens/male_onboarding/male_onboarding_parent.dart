@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'nickname_page.dart';
+import 'primary_language_page.dart';
 import 'avatar_page.dart';
 
 class MaleOnboardingParent extends StatefulWidget {
@@ -13,7 +14,7 @@ class MaleOnboardingParent extends StatefulWidget {
 class _MaleOnboardingParentState extends State<MaleOnboardingParent> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  final int _totalPages = 2;
+  final int _totalPages = 3;
 
   void _nextPage() {
     if (_currentPage < _totalPages - 1) {
@@ -94,6 +95,7 @@ class _MaleOnboardingParentState extends State<MaleOnboardingParent> {
                   },
                   children: [
                     NicknamePage(onNext: _nextPage),
+                    PrimaryLanguagePage(onNext: _nextPage),
                     const AvatarPage(),
                   ],
                 ),

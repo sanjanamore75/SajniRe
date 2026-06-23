@@ -43,6 +43,7 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
   String? _roomId;
   int _duration = 0;
   Timer? _timer;
+  Timer? _ringingTimer;
 
   bool _isMuted = false;
   bool _isSpeakerOn = false;
@@ -58,6 +59,17 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
     _roomId = widget.callRoomId;
     _callService = widget.preStartedCallService ?? CallService();
     _initRenderersAndCall();
+
+    if (widget.isCaller) {
+      _ringingTimer = Timer(const Duration(seconds: 7), () {
+        if (mounted && !_isConnected && !_isHangingUp) {
+          _triggerHangup();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Expert did not pick up. Please Try again.')),
+          );
+        }
+      });
+    }
   }
 
   Future<void> _initRenderersAndCall() async {
@@ -94,6 +106,7 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
             Future.delayed(const Duration(milliseconds: 500), () {
               Helper.setSpeakerphoneOn(true);
             });
+            _ringingTimer?.cancel();
             _startCallTimer();
             if (!widget.isCaller) _resolveExpertTier();
           }
@@ -132,6 +145,7 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
               Future.delayed(const Duration(milliseconds: 500), () {
                 Helper.setSpeakerphoneOn(true);
               });
+              _ringingTimer?.cancel();
               _startCallTimer();
               if (!widget.isCaller) _resolveExpertTier();
             }
@@ -291,6 +305,7 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
     
     if (mounted) {
       _timer?.cancel();
+      _ringingTimer?.cancel();
       
       if (widget.isCaller) {
         _saveCallLog();
@@ -379,6 +394,7 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
   @override
   void dispose() {
     _timer?.cancel();
+    _ringingTimer?.cancel();
     _localRenderer.srcObject = null;
     _remoteRenderer.srcObject = null;
     _localRenderer.dispose();

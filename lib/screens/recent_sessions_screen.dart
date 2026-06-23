@@ -143,7 +143,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                       final data = doc.data() as Map<String, dynamic>;
                       
                       final isCaller = data['callerId'] == currentUserMobile;
-                      final otherUserId = isCaller ? data['receiverId'] : data['callerId'];
+                      final String? otherUserId = (isCaller ? data['receiverId'] : data['callerId'])?.toString();
                       final isMissed = data['status'] == 'missed';
                       
                       String timeText = 'Unknown Time';
@@ -176,24 +176,6 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                             }
                             if (profileData['nickname'] != null && profileData['nickname'].toString().isNotEmpty) {
                               displayName = profileData['nickname'];
-                            }
-                          }
-
-                          // Also check if it's one of the dummy experts to give it the right avatar
-                          if (isCaller) {
-                            final List<Map<String, String>> dummyAvatars = [
-                              {'name': 'sneha', 'path': 'assets/avatars/female_1.png'},
-                              {'name': 'priya', 'path': 'assets/avatars/female_2.png'},
-                              {'name': 'riya', 'path': 'assets/avatars/female_3.png'},
-                              {'name': 'kavya', 'path': 'assets/avatars/female_4.png'},
-                              {'name': 'ananya', 'path': 'assets/avatars/female_5.png'},
-                              {'name': 'meera', 'path': 'assets/avatars/female_6.png'},
-                            ];
-                            for (var dummy in dummyAvatars) {
-                              if (displayName.toLowerCase() == dummy['name']) {
-                                avatarPath = dummy['path']!;
-                                displayName = dummy['name']![0].toUpperCase() + dummy['name']!.substring(1);
-                              }
                             }
                           }
 
@@ -236,6 +218,8 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
       targetLocked = await callService.lockUserForCall(targetId);
     }
     
+    
+    if (!context.mounted) return;
     final appState = context.read<AppState>();
     final currentUser = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : appState.nickname.toLowerCase();
     
@@ -278,7 +262,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => ActiveCallPage(
-          receiverId: isTargetExpert ? targetId : targetId,
+          receiverId: targetId,
           callerId: currentUser,
           nickname: displayName,
           avatarPath: 'assets/avatars/female_1.png',
@@ -357,7 +341,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             spreadRadius: 1,
             offset: const Offset(0, 4),
@@ -464,8 +448,8 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
                   color: isMissed 
-                    ? Colors.red.withOpacity(0.1) 
-                    : AppColors.successGreen.withOpacity(0.1),
+                    ? Colors.red.withValues(alpha: 0.1) 
+                    : AppColors.successGreen.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(

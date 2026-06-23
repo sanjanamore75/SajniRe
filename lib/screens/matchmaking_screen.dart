@@ -1,12 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'dart:math' as math;
 import '../models/female_expert.dart';
 import '../providers/app_state.dart';
 import '../services/call_service.dart';
-import '../services/matching_service.dart';
+import '../services/matchmaking_service.dart';
 import 'active_call_page.dart';
 
 class MatchmakingScreen extends StatefulWidget {
@@ -26,16 +26,21 @@ class MatchmakingScreen extends StatefulWidget {
 class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTickerProviderStateMixin {
   late AnimationController _radarController;
   final CallService _callService = CallService();
-  late final MatchingService _matchingService;
-  MatchController? _matchController;
+  late final MatchmakingService _matchingService;
   
-  String _statusMessage = 'Connecting...';
+  // ValueNotifiers to avoid setState rebuilds
+  final ValueNotifier<String> _statusMessage = ValueNotifier<String>('Connecting...');
+  final ValueNotifier<int> _ringingTimer = ValueNotifier<int>(0);
+  
   bool _isDisposed = false;
+  bool _isSearchCancelled = false;
+  Timer? _timer;
+  StreamSubscription? _callStatusSub;
 
   @override
   void initState() {
     super.initState();
-    _matchingService = MatchingService(_callService);
+    _matchingService = MatchmakingService();
     
     _radarController = AnimationController(
       vsync: this,
@@ -48,137 +53,183 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
   @override
   void dispose() {
     _isDisposed = true;
+    _isSearchCancelled = true;
     _radarController.dispose();
-    _matchController?.cancel();
+    _timer?.cancel();
+    _callStatusSub?.cancel();
+    _statusMessage.dispose();
+    _ringingTimer.dispose();
     super.dispose();
   }
 
   Future<void> _startMatchmakingProcess() async {
-    // 1. Initial short delay for smooth transition
     await Future.delayed(const Duration(milliseconds: 600));
     if (_isDisposed) return;
 
     final appState = context.read<AppState>();
-    final String callerId = appState.nickname.isNotEmpty 
-        ? appState.nickname.toLowerCase() 
-        : 'caller_1';
+    final String callerUid = appState.mobileNumber.isNotEmpty 
+        ? appState.mobileNumber 
+        : (appState.nickname.isNotEmpty ? appState.nickname.toLowerCase() : 'caller_1');
+    final String preferredLanguage = appState.primaryLanguage;
     final hasUsedFreeCall = appState.hasUsedFreeCall;
 
-    // 2. Direct Call Check (if not random mode)
+    String? matchedExpertUid;
+
+    // Direct Call Mode
     if (!widget.isRandomMode && widget.requestedExpert != null) {
-      setState(() {
-        _statusMessage = 'Checking availability for ${widget.requestedExpert!.nickname}...';
-      });
-
-      bool isBusy = true;
-      try {
-        final expertId = widget.requestedExpert!.nickname.toLowerCase();
-        final docSnap = await FirebaseDatabase.instanceFor(
-            app: FirebaseDatabase.instance.app,
-            databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
-          ).ref('experts_queue/$expertId')
-            .get();
-
-        if (docSnap.exists) {
-          final data = Map<dynamic, dynamic>.from(docSnap.value as Map);
-          if (data['status'] == 'waiting') {
-            isBusy = false;
-          }
+      _statusMessage.value = 'Checking availability for ${widget.requestedExpert!.nickname}...';
+      matchedExpertUid = widget.requestedExpert!.nickname.toLowerCase();
+      
+      bool isLocked = await _matchingService.lockExpertForCall(matchedExpertUid, callerUid);
+      if (!isLocked) {
+        if (!_isDisposed && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${widget.requestedExpert!.nickname} is currently busy. Please try again later.')),
+          );
+          Navigator.pop(context);
         }
-      } catch (e) {
-        debugPrint('Error checking availability: $e');
+        return;
+      }
+    } 
+    // Random Matchmaking Mode
+    else {
+      _statusMessage.value = 'Finding Expert...';
+      matchedExpertUid = await _matchingService.findAndLockExpert(callerUid, 'female', preferredLanguage);
+
+      if (_isDisposed || _isSearchCancelled) {
+        if (matchedExpertUid != null) {
+          await _matchingService.unlockExpert(matchedExpertUid);
+        }
+        return;
       }
 
-      if (_isDisposed) return;
-
-      if (!isBusy) {
-        // Connect directly!
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => ActiveCallPage(
-              receiverId: widget.requestedExpert!.nickname.toLowerCase(),
-              callerId: callerId,
-              nickname: widget.requestedExpert!.nickname,
-              avatarPath: widget.requestedExpert!.avatarPath,
-              pricePerMin: widget.requestedExpert!.pricePerMin.toDouble(),
-              isCaller: true,
-              isFirstFreeCall: !hasUsedFreeCall,
-            ),
-          ),
-        );
+      if (matchedExpertUid == null) {
+        _statusMessage.value = 'No experts available right now. Please try again.';
+        if (!_isDisposed && mounted) {
+          await Future.delayed(const Duration(seconds: 2));
+          Navigator.pop(context);
+        }
         return;
-      } else {
-        // Fallback to random matchmaking
-        setState(() {
-          _statusMessage = '${widget.requestedExpert!.nickname} is busy.\nFinding the best match...';
-        });
-        await Future.delayed(const Duration(seconds: 2));
-        if (_isDisposed) return;
       }
     }
 
-    // 3. Execute Random Matchmaking
-    setState(() {
-      _statusMessage = 'Looking for the best expert...';
-    });
+    // WE HAVE A LOCKED EXPERT. Start Ringing process!
+    _statusMessage.value = 'Ringing...';
 
-    _matchController = _matchingService.findRandomExpertAndCall(
-      callerId: callerId,
-      onMatchFound: (expertId, callRoomId) {
-        if (_isDisposed) return;
+    try {
+      // 1. Generate WebRTC Offer and start call in RTDB
+      final callRoomId = await _callService.startCall(
+        expertId: matchedExpertUid,
+        callerId: callerUid,
+        onRemoteStream: (stream) {},
+        onCallEnded: () {},
+      );
+
+      if (_isDisposed || _isSearchCancelled) {
+        await _callService.endCall(callRoomId);
+        await _matchingService.unlockExpert(matchedExpertUid);
+        return;
+      }
+
+      // 2. Start 15-second strict UI Timer
+      _ringingTimer.value = 15;
+      
+      final completer = Completer<bool>();
+      
+      _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+        if (_ringingTimer.value > 0) {
+          _ringingTimer.value--;
+        } else {
+          timer.cancel();
+          if (!completer.isCompleted) completer.complete(false); // Timeout failed
+        }
+      });
+
+      // 3. Listen to RTDB for expert answer ('connected' status)
+      final db = FirebaseDatabase.instanceFor(
+        app: FirebaseDatabase.instance.app,
+        databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
+      );
+      
+      _callStatusSub = db.ref('calls/$callRoomId/status').onValue.listen((event) {
+        if (event.snapshot.value == 'connected') {
+          if (!completer.isCompleted) completer.complete(true); // Success
+        } else if (event.snapshot.value == 'ended') {
+          if (!completer.isCompleted) completer.complete(false); // Rejected/Ended
+        }
+      });
+
+      // Await answer or timeout
+      bool expertAnswered = await completer.future;
+
+      _timer?.cancel();
+      await _callStatusSub?.cancel();
+
+      if (_isDisposed || _isSearchCancelled) {
+        await _callService.endCall(callRoomId);
+        await _matchingService.unlockExpert(matchedExpertUid);
+        return;
+      }
+
+      if (expertAnswered) {
+        // SUCCESS: Proceed with WebRTC stream
+        final doc = await FirebaseFirestore.instance.collection('experts').doc(matchedExpertUid).get();
         
-        // Fetch expert details before routing
-        FirebaseFirestore.instance
-            .collection('experts')
-            .doc(expertId)
-            .get()
-            .then((doc) {
-              if (_isDisposed) return;
-              
-              String nickname = expertId.toUpperCase();
-              String avatarPath = 'assets/avatars/female_1.png';
-              double pricePerMin = 5.0;
+        String nickname = widget.requestedExpert?.nickname ?? matchedExpertUid.toUpperCase();
+        String avatarPath = widget.requestedExpert?.avatarPath ?? 'assets/avatars/female_1.png';
+        double pricePerMin = widget.requestedExpert?.pricePerMin.toDouble() ?? 5.0;
 
-              if (doc.exists && doc.data() != null) {
-                final data = doc.data()!;
-                nickname = data['nickname'] ?? nickname;
-                avatarPath = data['avatarPath'] ?? avatarPath;
-                pricePerMin = (data['pricePerMin'] as num?)?.toDouble() ?? 5.0;
-              }
+        if (doc.exists && doc.data() != null) {
+          final data = doc.data()!;
+          nickname = data['nickname'] ?? nickname;
+          avatarPath = data['avatarPath'] ?? avatarPath;
+          pricePerMin = (data['pricePerMin'] as num?)?.toDouble() ?? 5.0;
+        }
 
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => ActiveCallPage(
-                    callRoomId: callRoomId,
-                    receiverId: expertId,
-                    callerId: callerId,
-                    nickname: nickname,
-                    avatarPath: avatarPath,
-                    pricePerMin: pricePerMin,
-                    isCaller: true,
-                    preStartedCallService: _callService,
-                    isFirstFreeCall: !hasUsedFreeCall,
-                  ),
-                ),
-              );
-            });
-      },
-      onRemoteStream: (stream) {},
-      onCallEnded: () {},
-      onError: (err) {
-        if (_isDisposed) return;
+        if (!_isDisposed && mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ActiveCallPage(
+                callRoomId: callRoomId,
+                receiverId: matchedExpertUid!, // We know it's not null here
+                callerId: callerUid,
+                nickname: nickname,
+                avatarPath: avatarPath,
+                pricePerMin: pricePerMin,
+                isCaller: true,
+                preStartedCallService: _callService,
+                isFirstFreeCall: !hasUsedFreeCall,
+              ),
+            ),
+          );
+        }
+      } else {
+        // TIMEOUT OR REJECTED
+        await _callService.endCall(callRoomId);
+        await _matchingService.unlockExpert(matchedExpertUid);
+        
+        if (!_isDisposed && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Expert is busy, please try later.')),
+          );
+          Navigator.pop(context);
+        }
+      }
+
+    } catch (e) {
+      await _matchingService.unlockExpert(matchedExpertUid);
+      if (!_isDisposed && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Matchmaking error: $err')),
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
         );
         Navigator.pop(context);
-      },
-    );
+      }
+    }
   }
 
   void _cancelSearch() {
-    _matchController?.cancel();
+    _isSearchCancelled = true;
     Navigator.pop(context);
   }
 
@@ -254,19 +305,46 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
             
             const Spacer(),
             
-            // Status Text
+            // Status Text (Rebuilt efficiently via ValueListenableBuilder)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Text(
-                _statusMessage,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
-                ),
+              child: ValueListenableBuilder<String>(
+                valueListenable: _statusMessage,
+                builder: (context, statusMsg, child) {
+                  return Text(
+                    statusMsg,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      height: 1.4,
+                    ),
+                  );
+                },
               ),
+            ),
+            
+            // 15-Second Timer Countdown (Only visible when ringing)
+            ValueListenableBuilder<int>(
+              valueListenable: _ringingTimer,
+              builder: (context, timerValue, child) {
+                if (timerValue > 0) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Text(
+                      '00:${timerValue.toString().padLeft(2, '0')}',
+                      style: const TextStyle(
+                        color: Color(0xFFF43F5E),
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink();
+              },
             ),
             
             const SizedBox(height: 60),
@@ -282,7 +360,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
                   borderRadius: BorderRadius.circular(30),
                 ),
                 child: const Text(
-                  'Cancel Search',
+                  'Cancel',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 16,

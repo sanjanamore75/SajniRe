@@ -8,7 +8,7 @@ import 'phone_auth_screen.dart';
 import 'active_call_page.dart';
 import 'incoming_call_screen.dart';
 import '../services/call_service.dart';
-import '../services/matching_service.dart';
+import '../services/matchmaking_service.dart';
 
 
 class FemaleExpertDashboard extends StatefulWidget {
@@ -21,13 +21,13 @@ class FemaleExpertDashboard extends StatefulWidget {
 class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
   final CallService _callService = CallService();
-  late final MatchingService _matchingService;
+  late final MatchmakingService _matchingService;
   StreamSubscription? _incomingCallSubscription;
 
   @override
   void initState() {
     super.initState();
-    _matchingService = MatchingService(_callService);
+    _matchingService = MatchmakingService();
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -90,7 +90,12 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
     final String expertId = appState.nickname.toLowerCase();
     if (expertId.isNotEmpty) {
       try {
-        await _matchingService.setExpertOnlineStatus(expertId, value);
+        await _matchingService.setExpertOnlineStatus(
+          expertId: expertId,
+          isOnline: value,
+          gender: 'female',
+          language: appState.primaryLanguage,
+        );
         await FirebaseFirestore.instance.collection('experts').doc(expertId).set({
           'nickname': appState.nickname,
           'mobileNumber': appState.mobileNumber,
@@ -102,6 +107,7 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
               ? appState.selectedAvatar
               : 'assets/avatars/female_1.png',
           'languages': appState.primaryLanguage,
+          'isOnline': value,
           'categories': ['All', 'Relationship', 'Star'],
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
@@ -139,7 +145,12 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
     final appState = context.read<AppState>();
     final String expertId = appState.nickname.toLowerCase();
     if (expertId.isNotEmpty) {
-      _matchingService.setExpertOnlineStatus(expertId, false).catchError((e) {
+      _matchingService.setExpertOnlineStatus(
+          expertId: expertId,
+          isOnline: false,
+          gender: 'female',
+          language: appState.primaryLanguage,
+      ).catchError((e) {
         debugPrint('Error removing expert from queue: $e');
       });
       FirebaseFirestore.instance.collection('experts').doc(expertId).set({

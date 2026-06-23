@@ -7,13 +7,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/app_state.dart';
 import '../theme/app_colors.dart';
 import '../services/call_service.dart';
-import '../services/matching_service.dart';
+import '../services/matchmaking_service.dart';
 import 'active_call_page.dart';
 import 'phone_auth_screen.dart';
 import 'upgrade_program_screen.dart';
 import 'withdraw_screen.dart';
 import 'incoming_call_screen.dart';
 import '../services/notification_service.dart';
+import '../services/hybrid_chat_service.dart';
 
 class ExpertHomeScreen extends StatefulWidget {
   const ExpertHomeScreen({super.key});
@@ -30,7 +31,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   bool _isLoadingStats = true;
 
   final CallService _callService = CallService();
-  late final MatchingService _matchingService;
+  late final MatchmakingService _matchingService;
   StreamSubscription? _incomingCallSubscription;
 
   // Animations
@@ -42,7 +43,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   @override
   void initState() {
     super.initState();
-    _matchingService = MatchingService(_callService);
+    _matchingService = MatchmakingService();
 
     _pulseController = AnimationController(
       vsync: this,
@@ -71,14 +72,21 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
       _fetchExpertStats();
       final appState = context.read<AppState>();
       setState(() => _isAudioOn = appState.isOnline);
+      final String expertId = appState.nickname.toLowerCase();
       if (appState.isOnline) {
-        _startIncomingCallListener(appState.nickname.toLowerCase());
+        _startIncomingCallListener(expertId);
+      }
+      
+      // Initialize Chat Listeners for Female Expert
+      if (expertId.isNotEmpty) {
+        HybridChatService().initListeners(expertId);
       }
     });
   }
 
   @override
   void dispose() {
+    HybridChatService().dispose();
     _incomingCallSubscription?.cancel();
     _pulseController.dispose();
     _cardSlideController.dispose();
@@ -133,7 +141,12 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     debugPrint('[STATUS] nickname=${appState.nickname} expertId=$expertId mobileNumber=${appState.mobileNumber} value=$value');
     if (expertId.isNotEmpty) {
       try {
-        await _matchingService.setExpertOnlineStatus(expertId, value);
+        await _matchingService.setExpertOnlineStatus(
+          expertId: expertId,
+          isOnline: value,
+          gender: 'female',
+          language: appState.primaryLanguage,
+        );
         debugPrint('[STATUS] RTDB queue updated for $expertId → $value');
         await FirebaseFirestore.instance
             .collection('experts')
@@ -150,6 +163,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
               : 'assets/avatars/female_1.png',
           'languages': appState.primaryLanguage,
           'rating': 4.8,
+          'isOnline': value,
           'categories': ['All', 'Relationship', 'Star'],
           'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
@@ -325,7 +339,12 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     final expertId = appState.nickname.toLowerCase();
     if (expertId.isNotEmpty) {
       _matchingService
-          .setExpertOnlineStatus(expertId, false)
+          .setExpertOnlineStatus(
+            expertId: expertId,
+            isOnline: false,
+            gender: 'female',
+            language: appState.primaryLanguage,
+          )
           .catchError((e) => debugPrint('Error: $e'));
       FirebaseFirestore.instance
           .collection('experts')

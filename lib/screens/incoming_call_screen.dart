@@ -27,10 +27,49 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
   final CallService _callService = CallService();
   StreamSubscription<DatabaseEvent>? _callSub;
   bool _isDismissing = false;
+  late Future<String> _callerNameFuture;
+
+  Future<String> _fetchCallerName() async {
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(widget.callerId).get();
+      if (doc.exists && doc.data() != null) {
+        final data = doc.data()!;
+        if (data['nickname'] != null && data['nickname'].toString().isNotEmpty) {
+          return data['nickname'].toString();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching caller name: $e");
+    }
+    return "User";
+  }
 
   @override
   void initState() {
     super.initState();
+    _callerNameFuture = _fetchCallerName();
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final appState = context.read<AppState>();
+      final String currentUserId;
+      if (appState.selectedGender.toLowerCase() == 'female') {
+        currentUserId = appState.nickname.toLowerCase();
+      } else {
+        currentUserId = appState.mobileNumber.isNotEmpty 
+            ? appState.mobileNumber 
+            : appState.nickname.toLowerCase();
+      }
+      
+      if (currentUserId.isNotEmpty) {
+        FirebaseDatabase.instanceFor(
+          app: FirebaseDatabase.instance.app,
+          databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
+        ).ref('status/$currentUserId').update({
+          'callStatus': 'ringing',
+        }).catchError((e) => debugPrint('Error setting ringing status: $e'));
+      }
+    });
+
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -89,7 +128,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
           callRoomId: widget.callRoomId,
           receiverId: currentUserId,
           callerId: widget.callerId,
-          nickname: widget.callerId,
+          nickname: 'User', // Will update in ActiveCallPage or can pass 'User'
           avatarPath: '', // Usually empty for male callers
           pricePerMin: 5.0,
           isCaller: false,
@@ -128,13 +167,19 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              widget.callerId.toUpperCase(),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 32,
-                fontWeight: FontWeight.bold,
-              ),
+            FutureBuilder<String>(
+              future: _callerNameFuture,
+              builder: (context, snapshot) {
+                final displayName = snapshot.data ?? 'User';
+                return Text(
+                  displayName.toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 32,
+                    fontWeight: FontWeight.bold,
+                  ),
+                );
+              },
             ),
             
             const Spacer(flex: 3),

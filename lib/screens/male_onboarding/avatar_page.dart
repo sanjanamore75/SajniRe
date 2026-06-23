@@ -55,6 +55,7 @@ class _AvatarPageState extends State<AvatarPage> {
         'nickname': nickname,
         'avatarPath': _selectedAvatar,
         'gender': 'male',
+        'primaryLanguage': appState.primaryLanguage,
         'walletBalance': appState.walletBalance,
         'hasUsedFreeCall': appState.hasUsedFreeCall,
       }, SetOptions(merge: true));

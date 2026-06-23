@@ -14,6 +14,9 @@ import 'matchmaking_screen.dart';
 import 'incoming_call_screen.dart';
 import '../services/call_service.dart';
 import '../services/notification_service.dart';
+import '../services/hybrid_chat_service.dart';
+import 'chat_list_screen.dart';
+import 'hybrid_chat_screen.dart';
 
 class MaleCallerDashboard extends StatefulWidget {
   const MaleCallerDashboard({super.key});
@@ -26,7 +29,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   final CallService _callService = CallService();
 
   // Navigation & filter states
-  int _currentTab = 0; // 0 for Home, 1 for Recents
+  int _currentTab = 0; // 0 for Home, 1 for Recents, 2 for Chats
   bool _isOnlineSwitch = true;
   String _selectedCategory = 'All';
 
@@ -74,23 +77,13 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
       } else {
         debugPrint('[MALE_DASH] already signed in uid=${FirebaseAuth.instance.currentUser?.uid}');
       }
-      
-      // DEBUG: Force insert an online expert
-      try {
-        await FirebaseFirestore.instance.collection('experts').doc('test_expert').set({
-          'nickname': 'Test Expert',
-          'isOnline': true,
-          'categories': ['All'],
-          'city': 'Test City',
-          'pricePerMin': 5,
-        });
-        debugPrint('[MALE_DASH] Inserted test expert!');
-      } catch (e) {
-        debugPrint('[MALE_DASH] Failed to insert test expert: $e');
-      }
 
       _setupMalePresenceAndCallListener();
       _fetchInitialWalletBalance();
+      // Initialize Chat Listeners
+      final appState = context.read<AppState>();
+      final myUid = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+      HybridChatService().initListeners(myUid);
     });
   }
 
@@ -135,6 +128,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
   @override
   void dispose() {
+    HybridChatService().dispose();
     _incomingCallSubscription?.cancel();
     _scrollController.dispose();
     super.dispose();
@@ -146,6 +140,16 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
     }
   }
 
+  Future<void> _refreshExperts() async {
+    setState(() {
+      _liveExperts.clear();
+      _lastExpertDoc = null;
+      _hasMoreExperts = true;
+      _isFetchingExperts = false;
+    });
+    await _fetchExperts();
+  }
+
   Future<void> _fetchExperts() async {
     if (_isFetchingExperts || !_hasMoreExperts) return;
     
@@ -154,7 +158,9 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
     });
 
     try {
-      var query = FirebaseFirestore.instance.collection('experts').limit(_expertsLimit);
+      var query = FirebaseFirestore.instance.collection('experts')
+          .where('isOnline', isEqualTo: true)
+          .limit(_expertsLimit);
       
       if (_lastExpertDoc != null) {
         query = query.startAfterDocument(_lastExpertDoc!);
@@ -188,7 +194,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                 final stored = (data['rating'] as num?)?.toDouble();
                 return double.parse((stored ?? computed.clamp(3.5, 5.0)).toStringAsFixed(1));
               })(),
-              isOnline: false,
+              isOnline: data['isOnline'] == true,
               categories: List<String>.from((data['categories'] as List<dynamic>?) ?? ['All']),
             ),
           );
@@ -369,7 +375,11 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
     return Scaffold(
       backgroundColor: brandBg,
       body: SafeArea(
-        child: _currentTab == 0 ? _buildHomeTab() : _buildRecentsTab(),
+        child: _currentTab == 0 
+            ? _buildHomeTab() 
+            : _currentTab == 1 
+                ? _buildRecentsTab() 
+                : const ChatListScreen(),
       ),
       bottomNavigationBar: Container(
         height: 64,
@@ -472,6 +482,48 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                 ),
               ),
             ),
+            // Chats Tab Button
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  _currentTab = 2;
+                });
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                decoration: _currentTab == 2
+                    ? BoxDecoration(
+                        color: brandPrimary.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(16),
+                      )
+                    : null,
+                child: Row(
+                  children: [
+                    Icon(
+                      _currentTab == 2
+                          ? Icons.chat_bubble_rounded
+                          : Icons.chat_bubble_outline_rounded,
+                      color: _currentTab == 2 ? brandPrimary : brandTextGrey,
+                      size: 22,
+                    ),
+                    if (_currentTab == 2) ...[
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Chats',
+                        style: TextStyle(
+                          color: brandPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -482,39 +534,22 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   Widget _buildHomeTab() {
     final appState = context.watch<AppState>();
 
-    // Generate Dummy Experts for UI Display
-    List<FemaleExpert> dummyExperts = [
-      FemaleExpert(nickname: 'Sneha', age: 22, city: 'Mumbai', pricePerMin: 5, bio: 'Love chatting about life', avatarPath: 'assets/avatars/female_1.png', languages: 'Hindi, English', rating: 4.8, isOnline: true, categories: ['All', 'Relationship']),
-      FemaleExpert(nickname: 'Priya', age: 24, city: 'Delhi', pricePerMin: 5, bio: 'Friendly advisor here for you', avatarPath: 'assets/avatars/female_2.png', languages: 'Hindi', rating: 4.9, isOnline: true, categories: ['All', 'Marriage']),
-      FemaleExpert(nickname: 'Riya', age: 21, city: 'Pune', pricePerMin: 5, bio: 'Let\'s be good friends!', avatarPath: 'assets/avatars/female_3.png', languages: 'Hindi', rating: 4.7, isOnline: true, categories: ['All', 'Star']),
-      FemaleExpert(nickname: 'Kavya', age: 25, city: 'Bangalore', pricePerMin: 5, bio: 'Relationship expert and listener', avatarPath: 'assets/avatars/female_4.png', languages: 'Hindi, English', rating: 4.9, isOnline: true, categories: ['All', 'Confidence']),
-      FemaleExpert(nickname: 'Ananya', age: 23, city: 'Kolkata', pricePerMin: 5, bio: 'Always here to listen to you', avatarPath: 'assets/avatars/female_5.png', languages: 'Hindi, Bengali', rating: 4.6, isOnline: true, categories: ['All', 'Relationship']),
-      FemaleExpert(nickname: 'Meera', age: 26, city: 'Jaipur', pricePerMin: 5, bio: 'Life coach and confident speaker', avatarPath: 'assets/avatars/female_6.png', languages: 'Hindi', rating: 4.8, isOnline: true, categories: ['All', 'Marriage']),
-    ];
-
-    // Combine DB online experts with dummy experts
-    final allAvailableExperts = [..._liveExperts, ...dummyExperts];
+    final allAvailableExperts = _liveExperts;
 
     final expertsList = allAvailableExperts.where((expert) {
       if (expert.nickname.trim().isEmpty) return false;
+      if (!expert.isOnline) return false;
       if (_selectedCategory == 'All') return true;
       return expert.categories.contains(_selectedCategory);
     }).toList();
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-            // --- RAW FIREBASE DATA DEBUG ---
-            Container(
-              color: Colors.red.shade900,
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                'DEBUG: Loaded Experts=${_liveExperts.length}\n' +
-                (_liveExperts.take(3).map((e) => '${e.nickname}').join('\n') + (_liveExperts.length > 3 ? '\n...' : '')),
-                style: const TextStyle(color: Colors.white, fontSize: 12),
-              ),
-            ),
-            // -------------------------------
+    return RefreshIndicator(
+      onRefresh: _refreshExperts,
+      child: SingleChildScrollView(
+        controller: _scrollController,
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
             // Redesigned Top Custom Header Row
             Padding(
               padding: const EdgeInsets.all(16.0),
@@ -527,6 +562,11 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                       fontWeight: FontWeight.bold,
                       color: brandTextDark,
                     ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh_rounded, color: brandPrimary),
+                    onPressed: _refreshExperts,
+                    tooltip: 'Refresh Experts',
                   ),
                   const Spacer(),
                   // Wallet Pill (Redesigned with Slate 800 + Amber tag)
@@ -781,29 +821,30 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
 
             // Redesigned Experts List view
-            Expanded(
-              child: expertsList.isEmpty && _isFetchingExperts
-                  ? const Center(child: CircularProgressIndicator())
-                  : expertsList.isEmpty
-                      ? const Center(child: Text('No experts available in this category'))
-                      : ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: expertsList.length + (_hasMoreExperts ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index == expertsList.length) {
-                              return const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 16.0),
-                                child: Center(child: CircularProgressIndicator()),
-                              );
-                            }
-                            final expert = expertsList[index];
-                            return _buildExpertItemRedesigned(expert);
-                          },
-                        ),
-            ),
+            expertsList.isEmpty && _isFetchingExperts
+                ? const Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator()))
+                : expertsList.isEmpty
+                    ? const Padding(padding: EdgeInsets.all(40), child: Center(child: Text('No experts available in this category')))
+                    : ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        itemCount: expertsList.length + (_hasMoreExperts ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == expertsList.length) {
+                            return const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 16.0),
+                              child: Center(child: CircularProgressIndicator()),
+                            );
+                          }
+                          final expert = expertsList[index];
+                          return _buildExpertItemRedesigned(expert);
+                        },
+                      ),
           ],
-        );
+        ),
+      ),
+    );
   }
 
   void _triggerCallByNickname(String nickname) async {
@@ -977,23 +1018,6 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                           if (expertData != null) {
                             avatarPath = expertData['avatarPath'] ?? avatarPath;
                             displayName = expertData['nickname'] ?? displayName;
-                          }
-                        }
-
-                        // Also check if it's one of the dummy experts to give it the right avatar
-                        final List<Map<String, String>> dummyAvatars = [
-                          {'name': 'sneha', 'path': 'assets/avatars/female_1.png'},
-                          {'name': 'priya', 'path': 'assets/avatars/female_2.png'},
-                          {'name': 'riya', 'path': 'assets/avatars/female_3.png'},
-                          {'name': 'kavya', 'path': 'assets/avatars/female_4.png'},
-                          {'name': 'ananya', 'path': 'assets/avatars/female_5.png'},
-                          {'name': 'meera', 'path': 'assets/avatars/female_6.png'},
-                        ];
-                        
-                        for (var dummy in dummyAvatars) {
-                          if (expertId.toLowerCase() == dummy['name']) {
-                            avatarPath = dummy['path']!;
-                            displayName = dummy['name']![0].toUpperCase() + dummy['name']!.substring(1);
                           }
                         }
 
@@ -1267,30 +1291,63 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    GestureDetector(
-                      onTap: () => _triggerCall(expert),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                        decoration: BoxDecoration(
-                          color: accentColor,
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.call_rounded, color: Colors.white, size: 14),
-                            SizedBox(width: 4),
-                            Text(
-                              'Call',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Chat Button
+                        GestureDetector(
+                          onTap: () {
+                             final appState = context.read<AppState>();
+                             final myUid = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+                             Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => HybridChatScreen(
+                                    myUid: myUid,
+                                    otherUid: expert.nickname.toLowerCase(),
+                                    otherUserName: expert.nickname,
+                                    otherUserAvatar: 'https://ui-avatars.com/api/?name=${expert.nickname}&background=random',
+                                  ),
+                                ),
+                              );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(14),
                             ),
-                          ],
+                            child: Icon(Icons.chat_bubble_rounded, color: accentColor, size: 16),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 6),
+                        // Call Button
+                        GestureDetector(
+                          onTap: () => _triggerCall(expert),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: accentColor,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.call_rounded, color: Colors.white, size: 14),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Call',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),

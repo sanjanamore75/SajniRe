@@ -4,7 +4,6 @@ import 'nickname_page.dart';
 import 'birth_year_page.dart';
 import 'avatar_page.dart';
 import 'primary_language_page.dart';
-import 'other_languages_page.dart';
 import 'audio_verification_page.dart';
 
 class FemaleOnboardingParent extends StatefulWidget {
@@ -17,7 +16,7 @@ class FemaleOnboardingParent extends StatefulWidget {
 class _FemaleOnboardingParentState extends State<FemaleOnboardingParent> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  final int _totalPages = 6;
+  final int _totalPages = 5;
 
   void _nextPage() {
     if (_currentPage < _totalPages - 1) {
@@ -102,7 +101,6 @@ class _FemaleOnboardingParentState extends State<FemaleOnboardingParent> {
                     BirthYearPage(onNext: _nextPage),
                     AvatarPage(onNext: _nextPage),
                     PrimaryLanguagePage(onNext: _nextPage),
-                    OtherLanguagesPage(onNext: _nextPage),
                     const AudioVerificationPage(),
                   ],
                 ),

@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_database/firebase_database.dart';
 import '../providers/app_state.dart';
 import '../services/call_service.dart';
+import '../widgets/local_avatar_widget.dart';
 import 'active_call_page.dart';
 
 class IncomingCallScreen extends StatefulWidget {
@@ -129,7 +130,6 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
           receiverId: currentUserId,
           callerId: widget.callerId,
           nickname: 'User', // Will update in ActiveCallPage or can pass 'User'
-          avatarPath: '', // Usually empty for male callers
           pricePerMin: 5.0,
           isCaller: false,
         ),
@@ -236,10 +236,10 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.person,
-                      color: Colors.white54,
-                      size: 80,
+                    child: LocalAvatarWidget(
+                      uid: widget.callerId,
+                      role: 'user', // Assuming callers are always users
+                      radius: 70,
                     ),
                   ),
                 ],

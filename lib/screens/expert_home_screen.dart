@@ -15,6 +15,7 @@ import 'withdraw_screen.dart';
 import 'incoming_call_screen.dart';
 import '../services/notification_service.dart';
 import '../services/hybrid_chat_service.dart';
+import '../widgets/local_avatar_widget.dart';
 
 class ExpertHomeScreen extends StatefulWidget {
   const ExpertHomeScreen({super.key});
@@ -158,9 +159,6 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
           'city': 'Online',
           'pricePerMin': 5,
           'bio': 'Talk to me about life, love, and everything in between.',
-          'avatarPath': appState.selectedAvatar.isNotEmpty
-              ? appState.selectedAvatar
-              : 'assets/avatars/female_1.png',
           'languages': appState.primaryLanguage,
           'rating': 4.8,
           'isOnline': value,
@@ -429,12 +427,10 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
                       width: 3,
                     ),
                   ),
-                  child: CircleAvatar(
+                  child: LocalAvatarWidget(
+                    uid: appState.nickname.toLowerCase(),
+                    role: 'expert',
                     radius: 28,
-                    backgroundColor: Colors.white24,
-                    backgroundImage: appState.selectedAvatar.isNotEmpty
-                        ? AssetImage(appState.selectedAvatar)
-                        : const AssetImage('assets/avatars/female_1.png'),
                   ),
                 ),
               ),

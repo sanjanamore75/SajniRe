@@ -81,9 +81,6 @@ class _AudioVerificationPageState extends State<AudioVerificationPage> with Sing
           'city': 'Online',
           'pricePerMin': 5,
           'bio': 'Talk to me about life, love, and everything in between.',
-          'avatarPath': appState.selectedAvatar.isNotEmpty
-              ? appState.selectedAvatar
-              : 'assets/avatars/female_1.png',
           'languages': appState.primaryLanguage,
           'rating': 4.8,
           'isOnline': false, // Offline by default when onboarded

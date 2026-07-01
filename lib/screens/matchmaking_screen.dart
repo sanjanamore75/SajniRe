@@ -176,13 +176,11 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
         final doc = await FirebaseFirestore.instance.collection('experts').doc(matchedExpertUid).get();
         
         String nickname = widget.requestedExpert?.nickname ?? matchedExpertUid.toUpperCase();
-        String avatarPath = widget.requestedExpert?.avatarPath ?? 'assets/avatars/female_1.png';
         double pricePerMin = widget.requestedExpert?.pricePerMin.toDouble() ?? 5.0;
 
         if (doc.exists && doc.data() != null) {
           final data = doc.data()!;
           nickname = data['nickname'] ?? nickname;
-          avatarPath = data['avatarPath'] ?? avatarPath;
           pricePerMin = (data['pricePerMin'] as num?)?.toDouble() ?? 5.0;
         }
 
@@ -195,7 +193,6 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
                 receiverId: matchedExpertUid!, // We know it's not null here
                 callerId: callerUid,
                 nickname: nickname,
-                avatarPath: avatarPath,
                 pricePerMin: pricePerMin,
                 isCaller: true,
                 preStartedCallService: _callService,

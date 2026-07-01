@@ -16,9 +16,6 @@ class AppState extends ChangeNotifier {
   int _birthYear = 2001;
   int get birthYear => _birthYear;
 
-  String _selectedAvatar = '';
-  String get selectedAvatar => _selectedAvatar;
-
   String _primaryLanguage = 'Hindi';
   String get primaryLanguage => _primaryLanguage;
 
@@ -60,11 +57,6 @@ class AppState extends ChangeNotifier {
 
   void setBirthYear(int year) {
     _birthYear = year;
-    notifyListeners();
-  }
-
-  void setSelectedAvatar(String avatar) {
-    _selectedAvatar = avatar;
     notifyListeners();
   }
 
@@ -131,7 +123,6 @@ class AppState extends ChangeNotifier {
     _selectedGender = '';
     _nickname = '';
     _birthYear = 2001;
-    _selectedAvatar = '';
     _primaryLanguage = 'Hindi';
     _otherLanguages.clear();
     _isAudioVerified = false;

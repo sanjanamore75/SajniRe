@@ -9,6 +9,7 @@ import 'active_call_page.dart';
 import 'incoming_call_screen.dart';
 import '../services/call_service.dart';
 import '../services/matchmaking_service.dart';
+import '../widgets/local_avatar_widget.dart';
 
 
 class FemaleExpertDashboard extends StatefulWidget {
@@ -103,9 +104,6 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
           'city': 'Online',
           'pricePerMin': 5,
           'bio': 'Talk to me about life, love, and everything in between.',
-          'avatarPath': appState.selectedAvatar.isNotEmpty
-              ? appState.selectedAvatar
-              : 'assets/avatars/female_1.png',
           'languages': appState.primaryLanguage,
           'isOnline': value,
           'categories': ['All', 'Relationship', 'Star'],
@@ -218,12 +216,10 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
                           width: 4.0,
                         ),
                       ),
-                      child: CircleAvatar(
+                      child: LocalAvatarWidget(
+                        uid: appState.nickname.toLowerCase(),
+                        role: 'expert',
                         radius: 80,
-                        backgroundColor: AppTheme.inputBg,
-                        backgroundImage: appState.selectedAvatar.isNotEmpty
-                            ? AssetImage(appState.selectedAvatar)
-                            : const AssetImage('assets/avatars/female_1.png'),
                       ),
                     ),
                     Positioned(

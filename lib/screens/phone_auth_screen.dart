@@ -149,7 +149,6 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
           final gender = (data['gender'] ?? 'male').toString();
           appState.setSelectedGender(gender == 'male' ? 'Male' : 'Female');
           appState.setNickname((data['nickname'] ?? '').toString());
-          appState.setSelectedAvatar((data['avatarPath'] ?? '').toString());
           
           if (mounted) {
             setState(() => _isLoading = false);

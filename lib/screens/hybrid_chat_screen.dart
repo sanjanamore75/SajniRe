@@ -8,14 +8,12 @@ class HybridChatScreen extends StatefulWidget {
   final String myUid;
   final String otherUid;
   final String otherUserName;
-  final String otherUserAvatar;
 
   const HybridChatScreen({
     super.key,
     required this.myUid,
     required this.otherUid,
     required this.otherUserName,
-    required this.otherUserAvatar,
   });
 
   @override

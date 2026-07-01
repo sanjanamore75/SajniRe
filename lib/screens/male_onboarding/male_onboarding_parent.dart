@@ -2,7 +2,11 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'nickname_page.dart';
 import 'primary_language_page.dart';
-import 'avatar_page.dart';
+import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../providers/app_state.dart';
+import '../male_dashboard_screen.dart';
+import '../avatar_selection_page.dart';
 
 class MaleOnboardingParent extends StatefulWidget {
   const MaleOnboardingParent({super.key});
@@ -14,14 +18,55 @@ class MaleOnboardingParent extends StatefulWidget {
 class _MaleOnboardingParentState extends State<MaleOnboardingParent> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  final int _totalPages = 3;
+  int get _totalPages => 3;
+  bool _isSaving = false;
 
-  void _nextPage() {
+  void _nextPage() async {
     if (_currentPage < _totalPages - 1) {
       _pageController.nextPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
+    } else {
+      if (_isSaving) return;
+      setState(() {
+        _isSaving = true;
+      });
+
+      final appState = context.read<AppState>();
+      final mobile = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+      final nickname = appState.nickname.isNotEmpty ? appState.nickname : "User";
+
+      try {
+        await FirebaseFirestore.instance.collection('users').doc(mobile).set({
+          'mobileNumber': mobile,
+          'nickname': nickname,
+          'gender': 'male',
+          'primaryLanguage': appState.primaryLanguage,
+          'walletBalance': appState.walletBalance,
+          'hasUsedFreeCall': appState.hasUsedFreeCall,
+        }, SetOptions(merge: true));
+
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (context) => const MaleCallerDashboard()),
+            (route) => false,
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error saving profile: $e')),
+          );
+        }
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isSaving = false;
+          });
+        }
+      }
     }
   }
 
@@ -96,7 +141,7 @@ class _MaleOnboardingParentState extends State<MaleOnboardingParent> {
                   children: [
                     NicknamePage(onNext: _nextPage),
                     PrimaryLanguagePage(onNext: _nextPage),
-                    const AvatarPage(),
+                    AvatarSelectionPage(onNext: _nextPage, gender: 'Male'),
                   ],
                 ),
               ),

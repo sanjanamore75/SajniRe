@@ -64,7 +64,6 @@ class SajniReApp extends StatelessWidget {
             receiverId: '',      // Will be resolved inside ActiveCallPage
             callerId:   args['callerName'] as String,
             nickname:   args['callerName'] as String,
-            avatarPath: '',
             pricePerMin: 5.0,
             isCaller: false,     // Receiver is accepting
           );

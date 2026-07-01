@@ -14,7 +14,6 @@ void main() async {
     print('  nickname: ${data['nickname']}');
     print('  mobileNumber: ${data['mobileNumber']}');
     print('  isOnline: ${data['isOnline']}');
-    print('  avatarPath: ${data['avatarPath']}');
     print('  categories: ${data['categories']}');
     print('  ALL FIELDS: $data');
   }

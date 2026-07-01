@@ -48,7 +48,6 @@ class _AuthWrapperState extends State<AuthWrapper> {
             appState.setMobileNumber(mobileNumber);
             appState.setSelectedGender(gender == 'male' ? 'Male' : 'Female');
             appState.setNickname(data['nickname'] ?? '');
-            appState.setSelectedAvatar(data['avatarPath'] ?? '');
             
             setState(() {
               _homeWidget = const MainNavigation();

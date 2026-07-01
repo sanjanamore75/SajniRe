@@ -38,14 +38,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 Future<void> _showCallkitIncoming(Map<String, dynamic> data) async {
   final uuid         = data['callUuid']    ?? 'uuid-${DateTime.now().millisecondsSinceEpoch}';
   final callerName   = data['callerName']  ?? 'Unknown Caller';
-  final callerAvatar = data['callerAvatar'] ?? '';
   final callRoomId   = data['callRoomId']  ?? '';
 
   final params = CallKitParams(
     id: uuid,
     nameCaller: callerName,
     appName: 'SajniRe',
-    avatar: callerAvatar.isNotEmpty ? callerAvatar : null,
     handle: 'SajniRe Audio Call',
     type: 0,          // 0 = audio call
     duration: 30000,  // auto-dismiss after 30s

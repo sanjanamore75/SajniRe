@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../theme/app_colors.dart';
 import '../providers/app_state.dart';
 import '../services/call_service.dart';
+import '../widgets/local_avatar_widget.dart';
 import 'active_call_page.dart';
 
 class RecentSessionsScreen extends StatefulWidget {
@@ -166,14 +167,10 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                       return FutureBuilder<DocumentSnapshot>(
                         future: FirebaseFirestore.instance.collection(collectionName).doc(otherUserId).get(),
                         builder: (context, profileSnapshot) {
-                          String avatarPath = isCaller ? 'assets/avatars/female_1.png' : 'assets/avatars/male_1.png';
                           String displayName = otherUserId ?? 'Unknown';
 
                           if (profileSnapshot.hasData && profileSnapshot.data!.exists) {
                             final profileData = profileSnapshot.data!.data() as Map<String, dynamic>;
-                            if (profileData['avatarPath'] != null && profileData['avatarPath'].toString().isNotEmpty) {
-                              avatarPath = profileData['avatarPath'];
-                            }
                             if (profileData['nickname'] != null && profileData['nickname'].toString().isNotEmpty) {
                               displayName = profileData['nickname'];
                             }
@@ -184,7 +181,6 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                             timeText: timeText,
                             duration: durationText,
                             cost: isMissed ? '₹0' : 'Ended',
-                            avatarUrl: avatarPath,
                             isMissed: isMissed,
                             otherUserId: otherUserId ?? '',
                             isCaller: isCaller,
@@ -265,7 +261,6 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
           receiverId: targetId,
           callerId: currentUser,
           nickname: displayName,
-          avatarPath: 'assets/avatars/female_1.png',
           isCaller: true, // We are initiating the call
           pricePerMin: 5.0,
           isFirstFreeCall: false,
@@ -328,7 +323,6 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
     required String timeText,
     required String duration,
     required String cost,
-    required String avatarUrl,
     required bool isMissed,
     required String otherUserId,
     required bool isCaller,
@@ -367,11 +361,10 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
             child: CircleAvatar(
               radius: 30,
               backgroundColor: Colors.white,
-              child: CircleAvatar(
+              child: LocalAvatarWidget(
+                uid: otherUserId,
+                role: isCaller ? 'expert' : 'user',
                 radius: 28,
-                backgroundImage: avatarUrl.startsWith('http')
-                    ? NetworkImage(avatarUrl) as ImageProvider
-                    : AssetImage(avatarUrl),
               ),
             ),
           ),

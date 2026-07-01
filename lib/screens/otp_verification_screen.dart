@@ -75,7 +75,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             appState.setMobileNumber(widget.mobileNumber);
             appState.setSelectedGender(gender == 'male' ? 'Male' : 'Female');
             appState.setNickname((data['nickname'] ?? '').toString());
-            appState.setSelectedAvatar((data['avatarPath'] ?? '').toString());
             
             // Navigate to Dashboard
             Navigator.pushAndRemoveUntil(

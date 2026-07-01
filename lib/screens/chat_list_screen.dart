@@ -124,9 +124,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           final timestamp = data['timestamp'] as int;
                           final unreadCount = data['unreadCount'] as int;
                           final displayName = data['displayName'] as String;
-
-                          final avatarUrl = 'https://ui-avatars.com/api/?name=$displayName&background=random';
-                          
                           final dt = DateTime.fromMillisecondsSinceEpoch(timestamp);
                           final now = DateTime.now();
                           String dayText;
@@ -140,7 +137,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                             name: displayName,
                             lastMessage: lastMessage,
                             dayText: dayText,
-                            avatarUrl: avatarUrl,
                             unreadCount: unreadCount,
                             onTap: () {
                               Navigator.push(
@@ -150,7 +146,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                                     myUid: myUid,
                                     otherUid: otherUser,
                                     otherUserName: displayName,
-                                    otherUserAvatar: avatarUrl,
                                   ),
                                 ),
                               );
@@ -221,7 +216,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     required String name,
     required String lastMessage,
     required String dayText,
-    required String avatarUrl,
     required int unreadCount,
     required VoidCallback onTap,
   }) {

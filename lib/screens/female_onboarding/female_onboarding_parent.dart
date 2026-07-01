@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import '../../theme/app_theme.dart';
 import 'nickname_page.dart';
 import 'birth_year_page.dart';
-import 'avatar_page.dart';
 import 'primary_language_page.dart';
 import 'audio_verification_page.dart';
+import '../avatar_selection_page.dart';
 
 class FemaleOnboardingParent extends StatefulWidget {
   const FemaleOnboardingParent({super.key});
@@ -16,7 +16,7 @@ class FemaleOnboardingParent extends StatefulWidget {
 class _FemaleOnboardingParentState extends State<FemaleOnboardingParent> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
-  final int _totalPages = 5;
+  int get _totalPages => 5;
 
   void _nextPage() {
     if (_currentPage < _totalPages - 1) {
@@ -99,8 +99,8 @@ class _FemaleOnboardingParentState extends State<FemaleOnboardingParent> {
                   children: [
                     NicknamePage(onNext: _nextPage),
                     BirthYearPage(onNext: _nextPage),
-                    AvatarPage(onNext: _nextPage),
                     PrimaryLanguagePage(onNext: _nextPage),
+                    AvatarSelectionPage(onNext: _nextPage, gender: 'Female'),
                     const AudioVerificationPage(),
                   ],
                 ),

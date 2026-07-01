@@ -6,6 +6,7 @@ import '../providers/app_state.dart';
 import 'kyc_pan_screen.dart';
 import 'referral_screen.dart';
 import 'withdrawal_history_screen.dart';
+import '../widgets/local_avatar_widget.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -17,9 +18,8 @@ class ProfileScreen extends StatelessWidget {
       body: Consumer<AppState>(
         builder: (context, appState, child) {
           final nickname = appState.nickname.isNotEmpty ? appState.nickname : 'User';
-          final avatar = appState.selectedAvatar.isNotEmpty 
-              ? AssetImage(appState.selectedAvatar) 
-              : const AssetImage('assets/avatars/female_1.png'); // Fallback dummy
+          final uid = appState.selectedGender == 'Female' ? appState.nickname.toLowerCase() : appState.mobileNumber;
+          final role = appState.selectedGender == 'Female' ? 'expert' : 'user';
               
           return SingleChildScrollView(
             child: Column(
@@ -56,9 +56,10 @@ class ProfileScreen extends StatelessWidget {
                                 child: CircleAvatar(
                                   radius: 50,
                                   backgroundColor: Colors.white,
-                                  child: CircleAvatar(
+                                  child: LocalAvatarWidget(
+                                    uid: uid,
+                                    role: role,
                                     radius: 46,
-                                    backgroundImage: avatar as ImageProvider,
                                   ),
                                 ),
                               ),

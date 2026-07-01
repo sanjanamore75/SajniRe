@@ -12,6 +12,7 @@ import 'active_call_page.dart';
 import 'wallet_recharge_screen.dart';
 import 'matchmaking_screen.dart';
 import 'incoming_call_screen.dart';
+import '../widgets/local_avatar_widget.dart';
 import '../services/call_service.dart';
 import '../services/notification_service.dart';
 import '../services/hybrid_chat_service.dart';
@@ -181,12 +182,12 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
           newExperts.add(
             FemaleExpert(
+              id: doc.id,
               nickname: nickname,
               age: (data['age'] as num?)?.toInt() ?? 20,
               city: data['city'] ?? 'Online',
               pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
               bio: data['bio'] ?? '',
-              avatarPath: data['avatarPath'] ?? 'assets/avatars/female_1.png',
               languages: data['languages']?.toString() ?? 'Hindi',
               rating: (() {
                 final totalSecs = (data['totalTalkSeconds'] as num?)?.toDouble() ?? 0;
@@ -230,12 +231,8 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
         appState.setHasUsedFreeCall(hasUsedFreeCall);
         
         final nickname = docSnap.data()?['nickname'] as String? ?? '';
-        final avatarPath = docSnap.data()?['avatarPath'] as String? ?? '';
         if (nickname.isNotEmpty) {
           appState.setNickname(nickname);
-        }
-        if (avatarPath.isNotEmpty) {
-          appState.setSelectedAvatar(avatarPath);
         }
       } else {
         await FirebaseFirestore.instance.collection('users').doc(mobile).set({
@@ -630,14 +627,10 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                       shape: BoxShape.circle,
                       border: Border.all(color: brandPrimary, width: 1.5),
                     ),
-                    child: CircleAvatar(
+                    child: LocalAvatarWidget(
+                      uid: appState.mobileNumber,
+                      role: 'user',
                       radius: 17,
-                      backgroundColor: Colors.grey.shade200,
-                      backgroundImage: AssetImage(
-                        appState.selectedAvatar.isNotEmpty
-                            ? appState.selectedAvatar
-                            : 'assets/male_avatar.png',
-                      ),
                     ),
                   ),
                 ],
@@ -868,12 +861,12 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
         }
 
         final expert = FemaleExpert(
+          id: doc.id,
           nickname: data['nickname'] ?? nickname,
           age: (data['age'] as num?)?.toInt() ?? 20,
           city: data['city'] ?? '',
           pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
           bio: data['bio'] ?? '',
-          avatarPath: data['avatarPath'] ?? 'assets/avatars/female_1.png',
           languages: data['languages'] ?? 'Hindi',
           rating: (data['rating'] ?? 4.5).toDouble(),
           isOnline: isOnline,
@@ -1010,13 +1003,11 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                     return FutureBuilder<DocumentSnapshot>(
                       future: FirebaseFirestore.instance.collection('experts').doc(expertId).get(),
                       builder: (context, expertSnap) {
-                        String avatarPath = 'assets/avatars/female_1.png';
                         String displayName = expertId;
                         
                         if (expertSnap.hasData && expertSnap.data!.exists) {
                           final expertData = expertSnap.data!.data() as Map<String, dynamic>?;
                           if (expertData != null) {
-                            avatarPath = expertData['avatarPath'] ?? avatarPath;
                             displayName = expertData['nickname'] ?? displayName;
                           }
                         }
@@ -1046,10 +1037,10 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                                     width: 1.5,
                                   ),
                                 ),
-                                child: CircleAvatar(
+                                child: LocalAvatarWidget(
+                                  uid: expertId,
+                                  role: 'expert',
                                   radius: 28,
-                                  backgroundColor: Colors.grey.shade100,
-                                  backgroundImage: AssetImage(avatarPath),
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -1159,10 +1150,10 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                 // Avatar with live online indicator (RTDB - Low Cost)
                 Stack(
                   children: [
-                    CircleAvatar(
+                    LocalAvatarWidget(
+                      uid: expert.id,
+                      role: 'expert',
                       radius: 32,
-                      backgroundColor: accentColor.withOpacity(0.1),
-                      backgroundImage: AssetImage(expert.avatarPath),
                     ),
                     Positioned(
                       bottom: 2,
@@ -1306,7 +1297,6 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                                     myUid: myUid,
                                     otherUid: expert.nickname.toLowerCase(),
                                     otherUserName: expert.nickname,
-                                    otherUserAvatar: 'https://ui-avatars.com/api/?name=${expert.nickname}&background=random',
                                   ),
                                 ),
                               );

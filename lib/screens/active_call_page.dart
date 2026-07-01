@@ -6,13 +6,13 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../providers/app_state.dart';
 import '../services/call_service.dart';
+import '../widgets/local_avatar_widget.dart';
 
 class ActiveCallPage extends StatefulWidget {
   final String? callRoomId; // Supplied for receiver/expert, generated for caller
   final String receiverId;
   final String callerId;
   final String nickname;
-  final String avatarPath;
   final bool isCaller;
   final double pricePerMin;
   final bool isFirstFreeCall;
@@ -24,7 +24,6 @@ class ActiveCallPage extends StatefulWidget {
     required this.receiverId,
     required this.callerId,
     required this.nickname,
-    required this.avatarPath,
     required this.isCaller,
     required this.pricePerMin,
     this.isFirstFreeCall = false,
@@ -418,14 +417,10 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
               // Call header containing Profile details
               Column(
                 children: [
-                  CircleAvatar(
+                  LocalAvatarWidget(
+                    uid: widget.isCaller ? widget.receiverId : widget.callerId,
+                    role: widget.isCaller ? 'expert' : 'user',
                     radius: 64,
-                    backgroundImage: widget.avatarPath.isNotEmpty
-                        ? (widget.avatarPath.startsWith('http')
-                            ? NetworkImage(widget.avatarPath)
-                            : AssetImage(widget.avatarPath) as ImageProvider)
-                        : const AssetImage('assets/avatars/female_1.png'),
-                    backgroundColor: Colors.white24,
                   ),
                   const SizedBox(height: 20),
                   Text(

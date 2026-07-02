@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 class AppState extends ChangeNotifier {
   // Authentication state
-  String _mobileNumber = '';
-  String get mobileNumber => _mobileNumber;
+  String _uid = '';
+  String get uid => _uid;
 
   // Gender / Role selection state
   String _selectedGender = ''; // 'Male' or 'Female' or ''
@@ -40,8 +40,8 @@ class AppState extends ChangeNotifier {
   bool get hasUsedFreeCall => _hasUsedFreeCall;
 
   // Setters
-  void setMobileNumber(String number) {
-    _mobileNumber = number;
+  void setUid(String id) {
+    _uid = id;
     notifyListeners();
   }
 
@@ -119,7 +119,7 @@ class AppState extends ChangeNotifier {
   }
 
   void reset() {
-    _mobileNumber = '';
+    _uid = '';
     _selectedGender = '';
     _nickname = '';
     _birthYear = 2001;

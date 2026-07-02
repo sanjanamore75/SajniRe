@@ -31,11 +31,11 @@ class _AuthWrapperState extends State<AuthWrapper> {
     if (user != null && user.phoneNumber != null) {
       // User is logged in, check if they have a profile in Firestore
       try {
-        final String mobileNumber = user.phoneNumber!.replaceAll('+91', '');
+        final String uid = user.uid;
         
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
-            .doc(mobileNumber)
+            .doc(uid)
             .get();
 
         if (mounted) {
@@ -45,7 +45,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
             final gender = data['gender'] ?? 'male';
 
             final appState = context.read<AppState>();
-            appState.setMobileNumber(mobileNumber);
+            appState.setUid(uid);
             appState.setSelectedGender(gender == 'male' ? 'Male' : 'Female');
             appState.setNickname(data['nickname'] ?? '');
             
@@ -56,7 +56,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
           } else {
             // Logged in but no profile (maybe they closed the app during onboarding)
             final appState = context.read<AppState>();
-            appState.setMobileNumber(mobileNumber);
+            appState.setUid(uid);
             
             setState(() {
               _homeWidget = const GenderSelectionScreen();

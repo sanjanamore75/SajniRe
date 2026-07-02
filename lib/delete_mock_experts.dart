@@ -7,17 +7,17 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
 
-  final mockNicknames = FemaleExpert.mockExperts.map((e) => e.nickname.toLowerCase()).toList();
-  mockNicknames.add('soni kumari'); // Explicitly adding the one from Recents
+  final mockIds = FemaleExpert.mockExperts.map((e) => e.id).toList();
+  // Explicitly adding the one from Recents if needed by ID, but mockIds handles it
 
   final collection = FirebaseFirestore.instance.collection('experts');
   
-  for (final nickname in mockNicknames) {
+  for (final id in mockIds) {
     try {
-      await collection.doc(nickname).delete();
-      print('Deleted $nickname from Firestore');
+      await collection.doc(id).delete();
+      print('Deleted $id from Firestore');
     } catch (e) {
-      print('Error deleting $nickname: $e');
+      print('Error deleting $id: $e');
     }
   }
 

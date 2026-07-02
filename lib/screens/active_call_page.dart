@@ -207,7 +207,7 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
 
   void _markFreeCallUsed() async {
     final appState = context.read<AppState>();
-    final mobile = appState.mobileNumber;
+    final mobile = appState.uid;
     appState.setHasUsedFreeCall(true);
     await FirebaseFirestore.instance.collection('users').doc(mobile).set({
       'hasUsedFreeCall': true,
@@ -354,7 +354,6 @@ class _ActiveCallPageState extends State<ActiveCallPage> {
         'receiverId': widget.receiverId,
         'durationSeconds': _duration,
         'status': status,
-        'createdAt': FieldValue.serverTimestamp(),
       });
     } catch (e) {
       debugPrint('Error saving call log: $e');

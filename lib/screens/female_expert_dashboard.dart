@@ -39,18 +39,18 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
       final appState = context.read<AppState>();
       _loadEarningsFromFirestore(appState);
       if (appState.isOnline) {
-        _startIncomingCallListener(appState.nickname.toLowerCase());
+        _startIncomingCallListener(appState.uid);
       }
     });
   }
 
   Future<void> _loadEarningsFromFirestore(AppState appState) async {
     try {
-      final mobile = appState.mobileNumber;
-      if (mobile.isEmpty) return;
+      final uid = appState.uid;
+      if (uid.isEmpty) return;
       final doc = await FirebaseFirestore.instance
           .collection('experts')
-          .doc(mobile)
+          .doc(uid)
           .get();
       if (doc.exists) {
         final data = doc.data()!;
@@ -88,7 +88,7 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
     final appState = context.read<AppState>();
     appState.setOnlineStatus(value);
     
-    final String expertId = appState.nickname.toLowerCase();
+    final String expertId = appState.uid;
     if (expertId.isNotEmpty) {
       try {
         await _matchingService.setExpertOnlineStatus(
@@ -97,17 +97,12 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
           gender: 'female',
           language: appState.primaryLanguage,
         );
-        await FirebaseFirestore.instance.collection('experts').doc(expertId).set({
+        final uid = appState.uid;
+        await FirebaseFirestore.instance.collection('experts').doc(uid).set({
           'nickname': appState.nickname,
-          'mobileNumber': appState.mobileNumber,
-          'age': 2026 - appState.birthYear,
-          'city': 'Online',
           'pricePerMin': 5,
-          'bio': 'Talk to me about life, love, and everything in between.',
           'languages': appState.primaryLanguage,
           'isOnline': value,
-          'categories': ['All', 'Relationship', 'Star'],
-          'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       } catch (e) {
         debugPrint('Error updating online status: $e');
@@ -141,7 +136,7 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
 
   void _logout() {
     final appState = context.read<AppState>();
-    final String expertId = appState.nickname.toLowerCase();
+    final String expertId = appState.uid;
     if (expertId.isNotEmpty) {
       _matchingService.setExpertOnlineStatus(
           expertId: expertId,
@@ -151,8 +146,8 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
       ).catchError((e) {
         debugPrint('Error removing expert from queue: $e');
       });
-      FirebaseFirestore.instance.collection('experts').doc(expertId).set({
-        'lastUpdated': FieldValue.serverTimestamp(),
+      final uid = appState.uid;
+      FirebaseFirestore.instance.collection('experts').doc(uid).set({
       }, SetOptions(merge: true)).catchError((e) => debugPrint('Error resetting online status: $e'));
     }
     _stopIncomingCallListener();
@@ -217,7 +212,7 @@ class _FemaleExpertDashboardState extends State<FemaleExpertDashboard> with Sing
                         ),
                       ),
                       child: LocalAvatarWidget(
-                        uid: appState.nickname.toLowerCase(),
+                        uid: appState.uid,
                         role: 'expert',
                         radius: 80,
                       ),

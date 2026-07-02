@@ -20,8 +20,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    final currentUserMobile = appState.mobileNumber;
-    final currentNickname = appState.nickname.toLowerCase();
+    final currentUserMobile = appState.uid;
     
     return Scaffold(
       backgroundColor: AppColors.bgLight,
@@ -110,9 +109,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                   final userCalls = snapshot.data!.docs.where((doc) {
                      final data = doc.data() as Map<String, dynamic>;
                      final matchesUser = data['callerId'] == currentUserMobile || 
-                                         data['receiverId'] == currentUserMobile ||
-                                         data['receiverId'] == currentNickname ||
-                                         data['callerId'] == currentNickname;
+                                         data['receiverId'] == currentUserMobile;
                      if (!matchesUser) return false;
 
                      if (_filter == 'Missed') {
@@ -121,16 +118,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                      return true; // 'All'
                   }).toList();
 
-                  userCalls.sort((a, b) {
-                    final aData = a.data() as Map<String, dynamic>;
-                    final bData = b.data() as Map<String, dynamic>;
-                    final aTime = aData['createdAt'] as Timestamp?;
-                    final bTime = bData['createdAt'] as Timestamp?;
-                    if (aTime == null && bTime == null) return 0;
-                    if (aTime == null) return 1;
-                    if (bTime == null) return -1;
-                    return bTime.compareTo(aTime);
-                  });
+                  // Sorting removed as per the plan
 
                   if (userCalls.isEmpty) {
                     return _buildEmptyState();
@@ -147,11 +135,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
                       final String? otherUserId = (isCaller ? data['receiverId'] : data['callerId'])?.toString();
                       final isMissed = data['status'] == 'missed';
                       
-                      String timeText = 'Unknown Time';
-                      if (data['createdAt'] != null) {
-                         final DateTime dt = (data['createdAt'] as Timestamp).toDate();
-                         timeText = '${dt.day}/${dt.month} ${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
-                      }
+                      String timeText = 'Recent Call';
 
                       // Determine duration text
                       String durationText = isMissed ? 'Missed Call' : 'Ended';
@@ -217,7 +201,7 @@ class _RecentSessionsScreenState extends State<RecentSessionsScreen> {
     
     if (!context.mounted) return;
     final appState = context.read<AppState>();
-    final currentUser = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : appState.nickname.toLowerCase();
+    final currentUser = appState.uid;
     
     // Lock self
     if (targetLocked) {

@@ -52,14 +52,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final appState = context.read<AppState>();
-      final String currentUserId;
-      if (appState.selectedGender.toLowerCase() == 'female') {
-        currentUserId = appState.nickname.toLowerCase();
-      } else {
-        currentUserId = appState.mobileNumber.isNotEmpty 
-            ? appState.mobileNumber 
-            : appState.nickname.toLowerCase();
-      }
+      final String currentUserId = appState.uid;
       
       if (currentUserId.isNotEmpty) {
         FirebaseDatabase.instanceFor(
@@ -118,9 +111,7 @@ class _IncomingCallScreenState extends State<IncomingCallScreen>
     _isDismissing = true;
     
     final appState = context.read<AppState>();
-    final currentUserId = appState.mobileNumber.isNotEmpty 
-        ? appState.mobileNumber 
-        : appState.nickname.toLowerCase();
+    final currentUserId = appState.uid;
     
     Navigator.pushReplacement(
       context,

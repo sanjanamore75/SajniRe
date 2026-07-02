@@ -34,12 +34,11 @@ class _MaleOnboardingParentState extends State<MaleOnboardingParent> {
       });
 
       final appState = context.read<AppState>();
-      final mobile = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+      final uid = appState.uid.isNotEmpty ? appState.uid : "test_uid";
       final nickname = appState.nickname.isNotEmpty ? appState.nickname : "User";
 
       try {
-        await FirebaseFirestore.instance.collection('users').doc(mobile).set({
-          'mobileNumber': mobile,
+        await FirebaseFirestore.instance.collection('users').doc(uid).set({
           'nickname': nickname,
           'gender': 'male',
           'primaryLanguage': appState.primaryLanguage,

@@ -67,9 +67,9 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
     if (_isDisposed) return;
 
     final appState = context.read<AppState>();
-    final String callerUid = appState.mobileNumber.isNotEmpty 
-        ? appState.mobileNumber 
-        : (appState.nickname.isNotEmpty ? appState.nickname.toLowerCase() : 'caller_1');
+    final String callerUid = appState.uid.isNotEmpty 
+        ? appState.uid 
+        : (appState.nickname.isNotEmpty ? appState.uid : 'caller_1');
     final String preferredLanguage = appState.primaryLanguage;
     final hasUsedFreeCall = appState.hasUsedFreeCall;
 
@@ -78,7 +78,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
     // Direct Call Mode
     if (!widget.isRandomMode && widget.requestedExpert != null) {
       _statusMessage.value = 'Checking availability for ${widget.requestedExpert!.nickname}...';
-      matchedExpertUid = widget.requestedExpert!.nickname.toLowerCase();
+      matchedExpertUid = widget.requestedExpert!.id;
       
       bool isLocked = await _matchingService.lockExpertForCall(matchedExpertUid, callerUid);
       if (!isLocked) {
@@ -175,7 +175,7 @@ class _MatchmakingScreenState extends State<MatchmakingScreen> with SingleTicker
         // SUCCESS: Proceed with WebRTC stream
         final doc = await FirebaseFirestore.instance.collection('experts').doc(matchedExpertUid).get();
         
-        String nickname = widget.requestedExpert?.nickname ?? matchedExpertUid.toUpperCase();
+        String nickname = widget.requestedExpert?.nickname ?? matchedExpertUid!.toUpperCase();
         double pricePerMin = widget.requestedExpert?.pricePerMin.toDouble() ?? 5.0;
 
         if (doc.exists && doc.data() != null) {

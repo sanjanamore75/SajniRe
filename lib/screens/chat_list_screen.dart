@@ -61,15 +61,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
   @override
   Widget build(BuildContext context) {
     final appState = context.watch<AppState>();
-    _currentUserMobile = appState.mobileNumber;
+    _currentUserMobile = appState.uid;
     if (_currentUserMobile.isEmpty) _currentUserMobile = "test_mobile";
 
-    // Dynamic ID logic: Females use nickname.toLowerCase(), Males use mobileNumber
-    String myUid = appState.selectedGender == 'Female' 
-        ? appState.nickname.toLowerCase() 
-        : _currentUserMobile;
-        
-    if (myUid.isEmpty) myUid = _currentUserMobile;
+    String myUid = _currentUserMobile;
 
     return Scaffold(
       backgroundColor: AppColors.bgLight,

@@ -73,7 +73,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
       _fetchExpertStats();
       final appState = context.read<AppState>();
       setState(() => _isAudioOn = appState.isOnline);
-      final String expertId = appState.nickname.toLowerCase();
+      final String expertId = appState.uid;
       if (appState.isOnline) {
         _startIncomingCallListener(expertId);
       }
@@ -100,22 +100,23 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     if (!mounted) return;
     setState(() => _isLoadingStats = true);
     final appState = context.read<AppState>();
-    final expertId = appState.nickname.toLowerCase();
-    if (expertId.isEmpty) {
+    final expertId = appState.uid;
+    final uid = appState.uid;
+    if (uid.isEmpty) {
       setState(() => _isLoadingStats = false);
       return;
     }
     
     // Save FCM Token for push notifications
     await NotificationService.instance.saveTokenForUser(
-      userId: expertId,
+      userId: uid,
       collection: 'experts',
     );
     
     try {
       final doc = await FirebaseFirestore.instance
           .collection('experts')
-          .doc(expertId)
+          .doc(uid)
           .get();
       if (doc.exists && mounted) {
         final data = doc.data()!;
@@ -138,8 +139,8 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
     appState.setOnlineStatus(value);
     setState(() => _isAudioOn = value);
 
-    final String expertId = appState.nickname.toLowerCase();
-    debugPrint('[STATUS] nickname=${appState.nickname} expertId=$expertId mobileNumber=${appState.mobileNumber} value=$value');
+    final String expertId = appState.uid;
+    debugPrint('[STATUS] nickname=${appState.nickname} expertId=$expertId uid=${appState.uid} value=$value');
     if (expertId.isNotEmpty) {
       try {
         await _matchingService.setExpertOnlineStatus(
@@ -149,23 +150,19 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
           language: appState.primaryLanguage,
         );
         debugPrint('[STATUS] RTDB queue updated for $expertId → $value');
+        final uid = appState.uid;
         await FirebaseFirestore.instance
             .collection('experts')
-            .doc(expertId)
+            .doc(uid)
             .set({
           'nickname': appState.nickname,
-          'mobileNumber': appState.mobileNumber,
           'age': 2026 - appState.birthYear,
-          'city': 'Online',
           'pricePerMin': 5,
-          'bio': 'Talk to me about life, love, and everything in between.',
           'languages': appState.primaryLanguage,
           'rating': 4.8,
           'isOnline': value,
-          'categories': ['All', 'Relationship', 'Star'],
-          'lastUpdated': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
-        debugPrint('[STATUS] Firestore updated experts/$expertId');
+        debugPrint('[STATUS] Firestore updated experts/$uid');
       } catch (e) {
         debugPrint('[STATUS] ERROR updating online status: $e');
       }
@@ -213,15 +210,13 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
       return;
     }
 
-    final nickname = context.read<AppState>().nickname.toLowerCase();
-
-    // Query KYC status from Firestore
+    final expertId = context.read<AppState>().uid;
     bool kycApproved = false;
     try {
       // Check by expertId (new submissions)
       var snap = await FirebaseFirestore.instance
           .collection('kyc_requests')
-          .where('expertId', isEqualTo: nickname)
+          .where('expertId', isEqualTo: expertId)
           .limit(1)
           .get();
 
@@ -235,7 +230,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
           final d = doc.data();
           final holder = (d['accountHolder'] ?? '').toString().toLowerCase();
           final eid = (d['expertId'] ?? '').toString().toLowerCase();
-          if (holder == nickname || eid == nickname) {
+          if (holder == expertId || eid == expertId) {
             snap = await FirebaseFirestore.instance
                 .collection('kyc_requests')
                 .where(FieldPath.documentId, isEqualTo: doc.id)
@@ -305,7 +300,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
   }
 
   Future<void> _processWithdrawal() async {
-    final expertId = context.read<AppState>().nickname.toLowerCase();
+    final expertId = context.read<AppState>().uid;
     if (expertId.isEmpty) return;
     try {
       await FirebaseFirestore.instance.collection('withdrawal_requests').add({
@@ -334,7 +329,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
 
   void _logout() {
     final appState = context.read<AppState>();
-    final expertId = appState.nickname.toLowerCase();
+    final expertId = appState.uid;
     if (expertId.isNotEmpty) {
       _matchingService
           .setExpertOnlineStatus(
@@ -344,10 +339,11 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
             language: appState.primaryLanguage,
           )
           .catchError((e) => debugPrint('Error: $e'));
+      final uid = appState.uid;
       FirebaseFirestore.instance
           .collection('experts')
-          .doc(expertId)
-          .set({'lastUpdated': FieldValue.serverTimestamp()}, SetOptions(merge: true)).catchError((e) => null);
+          .doc(uid)
+          .set({}, SetOptions(merge: true)).catchError((e) => null);
     }
     _incomingCallSubscription?.cancel();
     appState.reset();
@@ -428,7 +424,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
                     ),
                   ),
                   child: LocalAvatarWidget(
-                    uid: appState.nickname.toLowerCase(),
+                    uid: appState.uid,
                     role: 'expert',
                     radius: 28,
                   ),
@@ -666,7 +662,7 @@ class _ExpertHomeScreenState extends State<ExpertHomeScreen>
 
   // ── 3. Stats Card ──────────────────────────────────────────────────────
   Widget _buildStatsCard() {
-    final String expertId = context.read<AppState>().nickname.toLowerCase();
+    final String expertId = context.read<AppState>().uid;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(

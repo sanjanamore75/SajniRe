@@ -140,7 +140,7 @@ class _WalletRechargeScreenState extends State<WalletRechargeScreen> implements 
 
   Future<void> _syncWalletToFirestore({required bool success}) async {
     final appState = context.read<AppState>();
-    final mobile = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+    final mobile = appState.uid.isNotEmpty ? appState.uid : "test_uid";
     
     if (success) {
       try {
@@ -155,7 +155,7 @@ class _WalletRechargeScreenState extends State<WalletRechargeScreen> implements 
           
           double newBalance = currentBalance + _totalCoinsCredited;
           transaction.set(userDocRef, {
-            'mobileNumber': mobile,
+            'uid': mobile,
             'walletBalance': newBalance,
             'lastRechargedAt': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
@@ -190,7 +190,7 @@ class _WalletRechargeScreenState extends State<WalletRechargeScreen> implements 
 
   void _startPayUPaymentFlow() {
     final appState = context.read<AppState>();
-    final mobile = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "9876543210";
+    final mobile = appState.uid.isNotEmpty ? appState.uid : "9876543210";
     final nickname = appState.nickname.isNotEmpty ? appState.nickname : "Guest";
     final txnid = "TXN${DateTime.now().millisecondsSinceEpoch}";
 

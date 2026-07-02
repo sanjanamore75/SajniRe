@@ -5,10 +5,10 @@ class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Stream active chats for a user
-  Stream<QuerySnapshot> getUserChats(String mobileNumber) {
+  Stream<QuerySnapshot> getUserChats(String uid) {
     return _firestore
         .collection('chats')
-        .where('participants', arrayContains: mobileNumber)
+        .where('participants', arrayContains: uid)
         .snapshots();
   }
 
@@ -33,8 +33,6 @@ class ChatService {
       await newRoomRef.set({
         'participants': [user1, user2],
         'lastMessage': '',
-        'lastUpdated': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
       });
       return newRoomRef.id;
     } catch (e) {

@@ -136,7 +136,6 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       });
 
       final appState = context.read<AppState>();
-      appState.setMobileNumber(phone);
 
       // DEVELOPMENT BYPASS: Authenticate anonymously to satisfy Firestore rules,
       // then skip OTP and go directly to next screen

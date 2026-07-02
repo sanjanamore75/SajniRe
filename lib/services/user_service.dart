@@ -5,14 +5,14 @@ class UserService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Stream user profile based on their mobile number
-  Stream<DocumentSnapshot> getUserProfile(String mobileNumber) {
-    return _firestore.collection('users').doc(mobileNumber).snapshots();
+  Stream<DocumentSnapshot> getUserProfile(String uid) {
+    return _firestore.collection('users').doc(uid).snapshots();
   }
 
   // Update or Create user profile
-  Future<void> updateUserProfile(String mobileNumber, Map<String, dynamic> data) async {
+  Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
     try {
-      await _firestore.collection('users').doc(mobileNumber).set(
+      await _firestore.collection('users').doc(uid).set(
         {
           ...data,
           'updatedAt': FieldValue.serverTimestamp(),

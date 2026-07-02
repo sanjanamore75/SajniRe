@@ -57,11 +57,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       UserCredential userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
 
-      if (userCredential.user != null) {
+        final String uid = userCredential.user!.uid;
+        
         // Successful login, check if user exists in Firestore
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
-            .doc(widget.mobileNumber)
+            .doc(uid)
             .get();
 
         if (mounted) {
@@ -72,7 +73,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
             // Load app state
             final appState = context.read<AppState>();
-            appState.setMobileNumber(widget.mobileNumber);
+            appState.setUid(uid);
             appState.setSelectedGender(gender == 'male' ? 'Male' : 'Female');
             appState.setNickname((data['nickname'] ?? '').toString());
             
@@ -90,7 +91,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
             );
           }
         }
-      }
     } on FirebaseAuthException catch (e) {
       if (mounted) {
         String message = 'Invalid OTP. Please try again.';

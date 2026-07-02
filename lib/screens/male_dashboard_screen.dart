@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../providers/app_state.dart';
 import '../models/female_expert.dart';
+import '../utils/age_calculator.dart';
 import 'phone_auth_screen.dart';
 import 'active_call_page.dart';
 import 'wallet_recharge_screen.dart';
@@ -32,15 +33,6 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
   // Navigation & filter states
   int _currentTab = 0; // 0 for Home, 1 for Recents, 2 for Chats
   bool _isOnlineSwitch = true;
-  String _selectedCategory = 'All';
-
-  final List<String> _categories = [
-    'All',
-    'Star',
-    'Relationship',
-    'Marriage',
-    'Confidence',
-  ];
 
   // Modern Color Palette Constants
   static const Color brandBg = Color(0xFFF8FAFC); // Slate 50
@@ -83,20 +75,20 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
       _fetchInitialWalletBalance();
       // Initialize Chat Listeners
       final appState = context.read<AppState>();
-      final myUid = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+      final myUid = appState.uid.isNotEmpty ? appState.uid : "test_uid";
       HybridChatService().initListeners(myUid);
     });
   }
 
   void _setupMalePresenceAndCallListener() {
     final appState = context.read<AppState>();
-    final mobile = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+    final uid = appState.uid.isNotEmpty ? appState.uid : "test_uid";
     
     // Setup RTDB Presence
     final presenceRef = FirebaseDatabase.instanceFor(
       app: FirebaseDatabase.instance.app,
       databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
-    ).ref('status/$mobile');
+    ).ref('status/$uid');
     
     presenceRef.set({
       'isOnline': true,
@@ -111,7 +103,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
     // Listen for incoming calls
     _incomingCallSubscription = CallService().listenForIncomingCalls(
-      expertId: mobile, // Male user receives the call
+      expertId: uid, // Male user receives the call
       onCallReceived: (roomId, callerId) {
         if (!mounted) return;
         Navigator.push(
@@ -184,10 +176,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
             FemaleExpert(
               id: doc.id,
               nickname: nickname,
-              age: (data['age'] as num?)?.toInt() ?? 20,
-              city: data['city'] ?? 'Online',
               pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
-              bio: data['bio'] ?? '',
               languages: data['languages']?.toString() ?? 'Hindi',
               rating: (() {
                 final totalSecs = (data['totalTalkSeconds'] as num?)?.toDouble() ?? 0;
@@ -196,7 +185,6 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                 return double.parse((stored ?? computed.clamp(3.5, 5.0)).toStringAsFixed(1));
               })(),
               isOnline: data['isOnline'] == true,
-              categories: List<String>.from((data['categories'] as List<dynamic>?) ?? ['All']),
             ),
           );
         } catch (e) {
@@ -221,9 +209,9 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
   Future<void> _fetchInitialWalletBalance() async {
     final appState = context.read<AppState>();
-    final mobile = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+    final uid = appState.uid.isNotEmpty ? appState.uid : "test_uid";
     try {
-      final docSnap = await FirebaseFirestore.instance.collection('users').doc(mobile).get();
+      final docSnap = await FirebaseFirestore.instance.collection('users').doc(uid).get();
       if (docSnap.exists) {
         final balance = (docSnap.data()?['walletBalance'] as num?)?.toDouble() ?? 0.0;
         final hasUsedFreeCall = docSnap.data()?['hasUsedFreeCall'] as bool? ?? false;
@@ -235,8 +223,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
           appState.setNickname(nickname);
         }
       } else {
-        await FirebaseFirestore.instance.collection('users').doc(mobile).set({
-          'mobileNumber': mobile,
+        await FirebaseFirestore.instance.collection('users').doc(uid).set({
           'walletBalance': 0.0,
           'hasUsedFreeCall': false,
           'gender': 'male',
@@ -247,7 +234,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
       
       // Save FCM Token for push notifications
       await NotificationService.instance.saveTokenForUser(
-        userId: mobile,
+        userId: uid,
         collection: 'users',
       );
     } catch (e) {
@@ -536,8 +523,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
     final expertsList = allAvailableExperts.where((expert) {
       if (expert.nickname.trim().isEmpty) return false;
       if (!expert.isOnline) return false;
-      if (_selectedCategory == 'All') return true;
-      return expert.categories.contains(_selectedCategory);
+      return true;
     }).toList();
 
     return RefreshIndicator(
@@ -628,7 +614,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                       border: Border.all(color: brandPrimary, width: 1.5),
                     ),
                     child: LocalAvatarWidget(
-                      uid: appState.mobileNumber,
+                      uid: appState.uid,
                       role: 'user',
                       radius: 17,
                     ),
@@ -840,9 +826,9 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
     );
   }
 
-  void _triggerCallByNickname(String nickname) async {
+  void _triggerCallById(String expertId) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('experts').doc(nickname.toLowerCase()).get();
+      final doc = await FirebaseFirestore.instance.collection('experts').doc(expertId).get();
       if (doc.exists) {
         final data = doc.data() as Map<String, dynamic>;
         
@@ -852,7 +838,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
             app: FirebaseDatabase.instance.app,
             databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
           );
-          final event = await rtdb.ref('status/${nickname.toLowerCase()}/isOnline').once();
+          final event = await rtdb.ref('status/$expertId/isOnline').once();
           if (event.snapshot.value != null) {
             isOnline = event.snapshot.value == true;
           }
@@ -862,15 +848,11 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
         final expert = FemaleExpert(
           id: doc.id,
-          nickname: data['nickname'] ?? nickname,
-          age: (data['age'] as num?)?.toInt() ?? 20,
-          city: data['city'] ?? '',
+          nickname: data['nickname'] ?? 'Expert',
           pricePerMin: (data['pricePerMin'] as num?)?.toInt() ?? 5,
-          bio: data['bio'] ?? '',
           languages: data['languages'] ?? 'Hindi',
           rating: (data['rating'] ?? 4.5).toDouble(),
           isOnline: isOnline,
-          categories: List<String>.from(data['categories'] ?? ['All']),
         );
         _triggerCall(expert);
       } else {
@@ -950,7 +932,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('call_logs')
-                  .where('callerId', isEqualTo: appState.mobileNumber)
+                  .where('callerId', isEqualTo: appState.uid)
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
@@ -963,16 +945,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                   );
                 }
 
-                // Sort in memory by endedAt descending
                 final sortedDocs = List<QueryDocumentSnapshot>.from(docs);
-                sortedDocs.sort((a, b) {
-                  final aTime = (a.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-                  final bTime = (b.data() as Map<String, dynamic>)['createdAt'] as Timestamp?;
-                  if (aTime == null && bTime == null) return 0;
-                  if (aTime == null) return 1;
-                  if (bTime == null) return -1;
-                  return bTime.compareTo(aTime);
-                });
 
                 return ListView.builder(
                   itemCount: sortedDocs.length,
@@ -980,25 +953,11 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                     final data = sortedDocs[index].data() as Map<String, dynamic>;
                     final expertId = data['expertId'] ?? 'Unknown';
                     final durationSeconds = data['durationSeconds'] ?? 0;
-                    final endedAt = data['createdAt'] as Timestamp?;
-                    
                     final m = durationSeconds ~/ 60;
                     final s = durationSeconds % 60;
                     final durationStr = '${m}m ${s}s';
                     
-                    String formattedTime = '';
-                    if (endedAt != null) {
-                      final dt = endedAt.toDate();
-                      final hour = dt.hour > 12 ? dt.hour - 12 : (dt.hour == 0 ? 12 : dt.hour);
-                      final amPm = dt.hour >= 12 ? 'pm' : 'am';
-                      final minute = dt.minute.toString().padLeft(2, '0');
-                      final day = dt.day.toString().padLeft(2, '0');
-                      final month = dt.month.toString().padLeft(2, '0');
-                      final year = dt.year.toString().substring(2);
-                      formattedTime = '$day/$month/$year • $hour:$minute $amPm';
-                    } else {
-                      formattedTime = 'Just now';
-                    }
+                    String formattedTime = 'Just now';
 
                     return FutureBuilder<DocumentSnapshot>(
                       future: FirebaseFirestore.instance.collection('experts').doc(expertId).get(),
@@ -1077,7 +1036,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
 
                           // Call Button
                           GestureDetector(
-                            onTap: () => _triggerCallByNickname(expertId),
+                            onTap: () => _triggerCallById(expertId),
                             child: Container(
                               width: 44,
                               height: 44,
@@ -1162,7 +1121,7 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                         stream: FirebaseDatabase.instanceFor(
                           app: FirebaseDatabase.instance.app,
                           databaseURL: 'https://zegochat-c44b0.asia-southeast1.firebasedatabase.app',
-                        ).ref('status/${expert.nickname.toLowerCase()}/isOnline').onValue,
+                        ).ref('status/${expert.id}/isOnline').onValue,
                         builder: (context, snapshot) {
                           Color statusColor = Colors.grey;
 
@@ -1244,26 +1203,14 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      // Age, city, language in one line
+                      // Age, language in one line
                       Text(
-                        '${expert.age}y · ${expert.city} · ${expert.languages}',
+                        '${calculateAge(expert.id)}y · ${expert.languages}',
                         style: const TextStyle(
                           fontSize: 11,
                           color: brandTextGrey,
                         ),
                         overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      // Bio
-                      Text(
-                        expert.bio,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: brandTextGrey.withOpacity(0.8),
-                          fontStyle: FontStyle.italic,
-                        ),
                       ),
                     ],
                   ),
@@ -1289,13 +1236,13 @@ class _MaleCallerDashboardState extends State<MaleCallerDashboard> {
                         GestureDetector(
                           onTap: () {
                              final appState = context.read<AppState>();
-                             final myUid = appState.mobileNumber.isNotEmpty ? appState.mobileNumber : "test_mobile";
+                             final myUid = appState.uid.isNotEmpty ? appState.uid : "test_uid";
                              Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => HybridChatScreen(
                                     myUid: myUid,
-                                    otherUid: expert.nickname.toLowerCase(),
+                                    otherUid: expert.id,
                                     otherUserName: expert.nickname,
                                   ),
                                 ),

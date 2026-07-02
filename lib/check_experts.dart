@@ -12,9 +12,8 @@ void main() async {
     final data = doc.data();
     print('------ DOC: ${doc.id} ------');
     print('  nickname: ${data['nickname']}');
-    print('  mobileNumber: ${data['mobileNumber']}');
+    print('  uid: ${data['uid']}');
     print('  isOnline: ${data['isOnline']}');
-    print('  categories: ${data['categories']}');
     print('  ALL FIELDS: $data');
   }
   print('DONE');
